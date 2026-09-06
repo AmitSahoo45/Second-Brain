@@ -1,0 +1,15 @@
+id,task,priority,depends_on,deliverable,acceptance,status
+T01,Runtime and client feasibility,P0,none,"Config, dependency/license inventory, synthetic authenticated spike",G1: real-client and CPU evidence,planned
+T02,Owner identity and project grants,P0,T01,"OAuth admission, owner session, D1 revocation",G2: mandatory auth/isolation scenarios,planned
+T03,Canonical schema and bounds,P0,T02,"Migrations, types, validation, test harness",Migration and worst-case encoding tests,planned
+T04,Atomic memory mutations,P0,T03,"CAS, revisions, index, audit, idempotent receipts","G3: D1 race, fault and retry tests",planned
+T05,"Search, reads and history",P0,T04,Scoped lexical search and explicit history,"Isolation, archive, pagination and FTS tests",planned
+T06,Context and MCP tools,P0,T05,"Seven tools, bounded context, redacted status","Schema, response bounds and data-injection tests",planned
+T07,Owner dashboard,P0,T04;T05;T06,"Projects, note editor/history, connections and status","Browser, accessibility, CSRF and conflict tests",planned
+T08,Archive and purge,P0,T04;T07,"Admin purge, deletion ledger, retry tombstones",Purge atomicity and resurrection tests,planned
+T09,Backup and isolated restore,P0,T08,"Browser export/import, local verify/encryption",G4: verified restore with newest deletion ledger,planned
+T10,Retrieval and resource evaluation,P0,T06;T09,"Frozen corpus, metrics and runtime/cost reports","Required accuracy, latency and Free CPU targets",planned
+T11,Actual client handoff,P0,T06;T07;T09,Global instructions and five-client matrix,G5: actual client read/write/restart/revoke evidence,planned
+T12,Release and operations,P0,T10;T11,"CI, deploy/rollback runbook, release evidence",G1-G5 plus authorized deployment and recovery,planned
+T13,Optional local lifecycle hooks,P1,T12,Bounded context/checkpoint helpers,"Supported events, timeout and loop-guard tests",planned
+T14,Optional scheduled offsite backup,P1,T09;T12,Authorized encrypted backup destination,Delivery verification and timed recovery drill,planned

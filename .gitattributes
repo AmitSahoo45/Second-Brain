@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.png binary
+# Preserve the delivered planning package and its published checksums.
+shared-memory-blueprint/** -text

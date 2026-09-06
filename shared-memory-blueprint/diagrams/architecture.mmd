@@ -1,0 +1,44 @@
+flowchart TB
+    subgraph Clients["Connected AI clients"]
+        direction TB
+        ChatGPT["ChatGPT web"]
+        Codex["Codex CLI / IDE"]
+        Claude["Claude web / Code"]
+    end
+
+    Owner["Owner browser"]
+    GitHub["GitHub identity"]
+
+    subgraph Worker["One Cloudflare Worker"]
+        direction TB
+        OAuth["OAuth + stateless /mcp"]
+        Admin["Owner dashboard + owner_admin session / CSRF"]
+        Admission["Admit every protected request"]
+        Domain["Project-scoped domain rules"]
+        Repository["Bound queries + atomic write batch"]
+    end
+
+    KV[("OAuth KV")]
+
+    subgraph Database["Primary D1 database"]
+        direction TB
+        Grants[("Owner, actors, grants, scopes, projects")]
+        Canonical[("Notes, revisions, receipts, audit, tombstones")]
+        FTS[("Derived FTS5 index")]
+    end
+
+    ChatGPT -->|"HTTPS + independent grant"| OAuth
+    Codex -->|"HTTPS + independent grant"| OAuth
+    Claude -->|"HTTPS + independent grant"| OAuth
+    Owner --> Admin
+    Owner -->|"Sign in"| GitHub
+    GitHub -->|"Verified immutable owner ID"| OAuth
+    OAuth <-->|"Provider token state"| KV
+    OAuth --> Admission
+    Admin -->|"Server-derived owner_admin"| Admission
+    Admission <-->|"Primary check; failure denies"| Grants
+    Admission -->|"Owner + actor + explicit project"| Domain
+    Domain --> Repository
+    Repository <-->|"Canonical reads / atomic writes"| Canonical
+    Repository <-->|"Scoped search / same write batch"| FTS
+    Canonical -.->|"Rebuild on restore"| FTS

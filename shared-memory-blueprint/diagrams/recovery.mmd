@@ -1,0 +1,26 @@
+flowchart TB
+    Start["Owner browser: export as owner_admin"] --> Lease["Acquire write-barrier lease: at most 10 min"]
+    Lease --> Pages["Read canonical pages; FTS stays live"]
+    Pages --> Bounds{"Same live lease and total at most 25 MiB?"}
+    Bounds -->|"No"| Failed["Fail export; release matching lease; discard output"]
+    Bounds -->|"Yes"| Manifest["Finalize checksums; release lease; browser downloads bundle"]
+    Manifest --> Local["Local backup:verify"]
+    Local --> Verify{"Counts and checksums match?"}
+    Verify -->|"No"| Invalid["Discard; no owner verification confirmation"]
+    Verify -->|"Yes"| Backup["Local backup:encrypt via interactive age"]
+    Backup --> Confirm["Owner reports local verification; separate from server completion"]
+
+    Confirm --> Isolate["Provision isolated recovery instance for same owner"]
+    Isolate --> Import["Local decrypt; owner logs in and imports in browser"]
+    Import --> Validate{"Schema, limits, references and checksums valid?"}
+    Validate -->|"No"| Block["Stop; keep production unchanged"]
+    Validate -->|"Yes"| Ledger{"Newest separately downloaded deletion ledger available?"}
+    Ledger -->|"Yes"| Reconcile["Merge ledger; remove tombstoned content and history"]
+    Ledger -->|"No"| Review["Block promotion; owner reviews resurrection risk"]
+    Review -->|"Obtain ledger"| Reconcile
+    Review -->|"Explicit reviewed exception"| Exception["Record exception; apply available tombstones"]
+    Exception --> Rebuild["Rebuild FTS; verify counts and searches"]
+    Reconcile --> Rebuild
+    Rebuild --> Ready{"Recovery checks pass?"}
+    Ready -->|"No"| Block
+    Ready -->|"Yes"| Promote["Owner explicitly approves promotion; revalidate auth and reconnect"]

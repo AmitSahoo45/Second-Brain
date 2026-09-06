@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant C as AI client
+    participant W as Authenticated Worker
+    participant D as Primary D1
+
+    C->>W: update_memory(project, expected_revision, note, operation_id)
+    Note over W: MCP path shown; browser writes use a server-derived owner_admin actor
+    W->>D: Check owner, active grant, scopes and project
+    D-->>W: Admission decision
+
+    alt Denied or authorization storage unavailable
+        W-->>C: Fail closed; no protected data or mutation
+    else Admitted
+        W->>W: Bounded parse and hash canonical request
+        W->>D: Lookup owner + actor + operation_id receipt
+        D-->>W: Receipt or absent
+
+        alt Existing receipt matches request hash
+            W-->>C: Original receipt; replayed=true
+            Note over W,D: A purged receipt returns PURGED instead
+        else Existing receipt has a different hash
+            W-->>C: IDEMPOTENCY_CONFLICT; no change
+        else New operation
+            W->>W: Check prospective state and readable size
+            W->>D: Atomic batch with fresh internal attempt ID
+            Note over W,D: Check expected revision and maintenance lease in SQL
+            Note over D: Guarded note, revision, relations, FTS, audit and receipt
+            Note over D: Tail assertion fails if attempt receipt is missing
+
+            alt CAS matches and every statement succeeds
+                D-->>W: Commit; persisted success receipt
+                W-->>C: Memory ID, committed revision and time
+                opt Response was lost and client retries
+                    C->>W: Same operation_id and unchanged payload
+                    W->>D: Recheck admission, then lookup receipt
+                    D-->>W: Original committed receipt
+                    W-->>C: Original receipt if admitted; replayed=true
+                end
+            else Expected revision is stale
+                D-->>W: Guard fails; entire batch rolls back
+                W->>D: Authorized receipt and current-state reread
+                D-->>W: No competing receipt; newer revision
+                W-->>C: REVISION_CONFLICT; no success receipt
+                Note over C: Refetch, reconcile, then use a new operation_id
+            else Batch or storage failure
+                D-->>W: Error; no partial success
+                W->>D: Recheck receipt if storage is available
+                Note over W,D: Matching competing retry returns its persisted receipt
+                W-->>C: Matching receipt or classified failure; never guessed success
+            end
+        end
+    end
