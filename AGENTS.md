@@ -2,9 +2,9 @@
 
 ## Scope & Source of Truth
 
-Shared Memory is a planned personal MCP service for ChatGPT, Codex and Claude; no LLM or embedding APIs. Only the blueprint and this guide exist; there is no application, package manifest or Git history.
+Shared Memory is a personal MCP service being built for ChatGPT web, Codex VS Code, Grok web and Claude web; no LLM or embedding APIs. T01 feasibility work is in progress; live acceptance remains unverified.
 
-Read the [baseline](shared-memory-blueprint/docs/BASELINE.md), [design](shared-memory-blueprint/docs/superpowers/specs/2026-09-06-shared-memory-design.md), [implementation plan](shared-memory-blueprint/docs/superpowers/plans/2026-09-06-shared-memory-implementation.md) and [contracts](shared-memory-blueprint/docs/contracts/) before coding. The baseline overrides exploratory research. Resolve contract/plan conflicts explicitly in documentation.
+Read the [baseline](shared-memory-blueprint/docs/BASELINE.md), [design](shared-memory-blueprint/docs/superpowers/specs/2026-09-06-shared-memory-design.md), [implementation plan](shared-memory-blueprint/docs/superpowers/plans/2026-09-06-shared-memory-implementation.md), [contracts](shared-memory-blueprint/docs/contracts/) and [implementation decisions](IMPLEMENTATION-NOTES.md) before coding. Decisions record user corrections and sequencing clarifications; the baseline overrides exploratory research. Resolve conflicts explicitly in documentation.
 
 ## Project Structure & Module Organization
 
