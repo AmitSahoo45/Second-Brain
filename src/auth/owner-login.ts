@@ -48,6 +48,25 @@ function escape(value: string) {
   );
 }
 
+// Probe diagnostics identify only a fixed dependency step, never exception data.
+async function callbackStep<T>(
+  stage:
+    | 'state_consume'
+    | 'token_fetch'
+    | 'token_json'
+    | 'identity_fetch'
+    | 'identity_json'
+    | 'owner_store',
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(503, `callback_${stage}_failed`);
+  }
+}
+
 export async function ownerLogin(
   request: Request,
   env: ProbeEnv,
@@ -116,16 +135,12 @@ export async function ownerLogin(
       url.searchParams.getAll('code').length !== 1
     )
       throw new HttpError(400, 'invalid_request');
-    const flow = await consumeAuthFlow(
-      env.DB,
-      state,
-      await hash(browser),
-      Date.now(),
+    const flow = await callbackStep('state_consume', async () =>
+      consumeAuthFlow(env.DB, state, await hash(browser), Date.now()),
     );
     if (!flow) throw new HttpError(400, 'invalid_request');
-    const tokenResponse = await fetch(
-      'https://github.com/login/oauth/access_token',
-      {
+    const tokenResponse = await callbackStep('token_fetch', () =>
+      fetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -139,31 +154,44 @@ export async function ownerLogin(
         }),
         redirect: 'error',
         signal: AbortSignal.timeout(10000),
-      },
+      }),
     );
     if (!tokenResponse.ok) throw new HttpError(403, 'access_denied');
-    const token = (await tokenResponse.json()) as { access_token?: unknown };
-    if (typeof token.access_token !== 'string' || !token.access_token)
-      throw new HttpError(403, 'access_denied');
-    const identityResponse = await fetch('https://api.github.com/user', {
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'shared-memory-probe',
-      },
-      redirect: 'error',
-      signal: AbortSignal.timeout(10000),
+    const token = await callbackStep('token_json', async () => {
+      const parsed = (await tokenResponse.json()) as {
+        access_token?: unknown;
+      } | null;
+      if (typeof parsed?.access_token !== 'string' || !parsed.access_token)
+        throw new HttpError(403, 'access_denied');
+      return parsed.access_token;
     });
+    const identityResponse = await callbackStep('identity_fetch', () =>
+      fetch('https://api.github.com/user', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'shared-memory-probe',
+        },
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     // Upstream credentials remain only in this request's memory; never persisted.
     if (!identityResponse.ok) throw new HttpError(403, 'access_denied');
-    const identity = (await identityResponse.json()) as { id?: unknown };
-    if (
-      typeof identity.id !== 'number' ||
-      !Number.isSafeInteger(identity.id) ||
-      String(identity.id) !== config.ownerSubject
-    )
-      throw new HttpError(403, 'access_denied');
-    const owner = await provisionOwner(env.DB, config.ownerSubject);
+    await callbackStep('identity_json', async () => {
+      const identity = (await identityResponse.json()) as {
+        id?: unknown;
+      } | null;
+      if (
+        typeof identity?.id !== 'number' ||
+        !Number.isSafeInteger(identity.id) ||
+        String(identity.id) !== config.ownerSubject
+      )
+        throw new HttpError(403, 'access_denied');
+    });
+    const owner = await callbackStep('owner_store', () =>
+      provisionOwner(env.DB, config.ownerSubject),
+    );
     const session = crypto.randomUUID();
     const csrf = crypto.randomUUID();
     if (

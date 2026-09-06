@@ -101,7 +101,11 @@ async function start(scope = 'memory:read memory:write') {
   };
 }
 
-async function login(subject = 123456789, scope = 'memory:read memory:write') {
+async function login(
+  subject = 123456789,
+  scope = 'memory:read memory:write',
+  responses: { token?: () => Response; identity?: () => Response } = {},
+) {
   const started = await start(scope);
   const upstream = vi
     .spyOn(globalThis, 'fetch')
@@ -113,17 +117,23 @@ async function login(subject = 123456789, scope = 'memory:read memory:write') {
             ? input.href
             : input.url;
       if (url === 'https://github.com/login/oauth/access_token')
-        return Response.json({
-          access_token: 'synthetic-upstream-only',
-          token_type: 'bearer',
-          scope: '',
-        });
+        return (
+          responses.token?.() ??
+          Response.json({
+            access_token: 'synthetic-upstream-only',
+            token_type: 'bearer',
+            scope: '',
+          })
+        );
       if (url === 'https://api.github.com/user')
-        return Response.json({
-          id: subject,
-          login: 'synthetic-owner',
-          name: null,
-        });
+        return (
+          responses.identity?.() ??
+          Response.json({
+            id: subject,
+            login: 'synthetic-owner',
+            name: null,
+          })
+        );
       throw new Error('Unexpected external request');
     });
   try {
@@ -395,6 +405,134 @@ test('rejects wrong browser state without contacting upstream', async () => {
 
 test('rejects a second GitHub account', async () => {
   expect((await login(987654321)).response.status).toBe(403);
+});
+
+const sensitiveCanary =
+  'synthetic-private-body Bearer synthetic-private-token client_secret=synthetic-private-secret https://synthetic.example/oauth/callback?code=synthetic-private-code&state=synthetic-private-state';
+
+async function expectPrivateCallbackFailure(
+  attempt: () => Promise<{ response: Response }>,
+  expectedCode: string,
+) {
+  const logs = (['debug', 'info', 'log', 'warn', 'error'] as const).map(
+    (method) => vi.spyOn(console, method).mockImplementation(() => {}),
+  );
+  try {
+    const { response } = await attempt();
+    expect(response.status).toBe(503);
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual({ error: expectedCode });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const exposed = body + JSON.stringify([...response.headers]);
+    expect(exposed).not.toContain('synthetic-private');
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
+  } finally {
+    for (const log of logs) log.mockRestore();
+  }
+}
+
+test.each([
+  ['token', 'fetch', 'callback_token_fetch_failed'],
+  ['token', 'json', 'callback_token_json_failed'],
+  ['identity', 'fetch', 'callback_identity_fetch_failed'],
+  ['identity', 'json', 'callback_identity_json_failed'],
+] as const)(
+  'callback identifies %s %s failure without exposing upstream details',
+  async (dependency, failure, expectedCode) => {
+    const ownersBefore = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM owners',
+    ).first('n');
+    await expectPrivateCallbackFailure(
+      () =>
+        login(123456789, 'memory:read memory:write', {
+          [dependency]: () => {
+            if (failure === 'fetch') throw new Error(sensitiveCanary);
+            return new Response(sensitiveCanary, {
+              headers: { 'content-type': 'application/json' },
+            });
+          },
+        }),
+      expectedCode,
+    );
+    expect(
+      await env.DB.prepare('SELECT COUNT(*) AS n FROM owners').first('n'),
+    ).toBe(ownersBefore);
+  },
+);
+
+test.each([
+  [
+    'DELETE FROM probe_auth_flows WHERE state =',
+    'callback_state_consume_failed',
+  ],
+  ['INSERT OR IGNORE INTO owners', 'callback_owner_store_failed'],
+] as const)(
+  'callback identifies storage failure at %s without exposing query details',
+  async (queryPrefix, expectedCode) => {
+    const prepare = env.DB.prepare.bind(env.DB);
+    const storage = vi.spyOn(env.DB, 'prepare').mockImplementation((query) => {
+      if (query.startsWith(queryPrefix)) throw new Error(sensitiveCanary);
+      return prepare(query);
+    });
+    try {
+      await expectPrivateCallbackFailure(() => login(), expectedCode);
+    } finally {
+      storage.mockRestore();
+    }
+  },
+);
+
+test.each(['token', 'identity'] as const)(
+  'callback preserves access denial for unsuccessful %s responses',
+  async (dependency) => {
+    const { response } = await login(123456789, 'memory:read memory:write', {
+      [dependency]: () => new Response(sensitiveCanary, { status: 401 }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'access_denied' });
+  },
+);
+
+test.each(['token', 'identity'] as const)(
+  'callback denies null %s JSON without an unclassified exception',
+  async (dependency) => {
+    const { response } = await login(123456789, 'memory:read memory:write', {
+      [dependency]: () => Response.json(null),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'access_denied' });
+  },
+);
+
+test('callback preserves disabled-owner denial inside the storage stage', async () => {
+  expect((await login()).response.status).toBe(200);
+  await env.DB.prepare('UPDATE owners SET active = 0').run();
+  try {
+    const { response } = await login();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'access_denied' });
+  } finally {
+    await env.DB.prepare('UPDATE owners SET active = 1').run();
+  }
+});
+
+test('callback preserves bounded consent admission status', async () => {
+  expect((await login()).response.status).toBe(200);
+  await env.DB.prepare('DELETE FROM probe_consents').run();
+  await env.DB.batch(
+    Array.from({ length: 8 }, (_, index) =>
+      env.DB.prepare(
+        'INSERT INTO probe_consents SELECT ?, ?, ?, owner_id, project_id, ? FROM projects LIMIT 1',
+      ).bind(`pending-${index}`, 'synthetic-csrf', '{}', Date.now() + 600000),
+    ),
+  );
+  try {
+    const { response } = await login();
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: 'temporarily_unavailable' });
+  } finally {
+    await env.DB.prepare('DELETE FROM probe_consents').run();
+  }
 });
 
 test('consent requires exact Origin and CSRF value', async () => {
