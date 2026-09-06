@@ -1,0 +1,19 @@
+{
+  "checked_date": "2026-09-06",
+  "repository": "https://github.com/cloudflare/workers-sdk",
+  "commit": "be87ff0382c53a294e948e49419d25d653c50e86",
+  "retrieval": "GitHub plugin fetch, immutable commit URLs; raw source text preserved as UTF-8 with LF newlines",
+  "purpose": "Supplementary upstream license evidence for archives missing bundled license files; does not resolve or redefine any package license.",
+  "files": [
+    {
+      "path": "LICENSE-MIT",
+      "url": "https://github.com/cloudflare/workers-sdk/blob/be87ff0382c53a294e948e49419d25d653c50e86/LICENSE-MIT",
+      "sha256": "9bb3b077cc8628334bab25961223dd8207252c8a56aa054195be38f1c042aaf4"
+    },
+    {
+      "path": "LICENSE-APACHE",
+      "url": "https://github.com/cloudflare/workers-sdk/blob/be87ff0382c53a294e948e49419d25d653c50e86/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    }
+  ]
+}

@@ -10,9 +10,14 @@ import { getOAuthApi } from '@cloudflare/workers-oauth-provider';
 import { providerOptions } from '../../src/auth/provider';
 import { loadConfig } from '../../src/config';
 import migration from '../../src/db/migrations/0001_auth.sql?raw';
+import boundsMigration from '../../src/db/migrations/0002_probe_auth_bounds.sql?raw';
 import {
   Client,
   StreamableHTTPClientTransport,
+  UnauthorizedError,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
+  type StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
 
 const fixtureEnv = {
@@ -41,7 +46,7 @@ async function request(path: string, init?: RequestInit) {
 }
 
 beforeAll(async () => {
-  for (const statement of migration
+  for (const statement of (migration + boundsMigration)
     .split(';')
     .map((value) => value.trim())
     .filter(Boolean))
@@ -86,8 +91,8 @@ function cookie(response: Response) {
   return response.headers.get('set-cookie')!.split(';')[0]!;
 }
 
-async function start() {
-  const response = await request(authorization());
+async function start(scope = 'memory:read memory:write') {
+  const response = await request(authorization({ scope }));
   expect(response.status).toBe(302);
   const githubUrl = new URL(response.headers.get('location')!);
   return {
@@ -96,8 +101,8 @@ async function start() {
   };
 }
 
-async function login(subject = 123456789) {
-  const started = await start();
+async function login(subject = 123456789, scope = 'memory:read memory:write') {
+  const started = await start(scope);
   const upstream = vi
     .spyOn(globalThis, 'fetch')
     .mockImplementation(async (input) => {
@@ -133,8 +138,8 @@ async function login(subject = 123456789) {
   }
 }
 
-async function grant() {
-  const { response } = await login();
+async function grant(scope = 'memory:read memory:write') {
+  const { response } = await login(123456789, scope);
   expect(response.status).toBe(200);
   const html = await response.text();
   const csrf = html.match(/name="csrf" value="([^"]+)"/)![1]!;
@@ -186,6 +191,122 @@ test('unauthenticated protected route has canonical OAuth challenge', async () =
   );
 });
 
+test('official SDK normal OAuth discovery requests the writable probe permissions without a forced scope', async () => {
+  const saved: {
+    authorization?: URL;
+    verifier?: string;
+    discovery?: OAuthDiscoveryState;
+    tokens?: StoredOAuthTokens;
+  } = {};
+  const authProvider: OAuthClientProvider = {
+    redirectUrl: redirectUri,
+    clientMetadata: {
+      redirect_uris: [redirectUri],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    },
+    clientInformation: () => ({ client_id: clientId }),
+    tokens: () => saved.tokens,
+    saveTokens: (tokens) => {
+      saved.tokens = tokens;
+    },
+    redirectToAuthorization: (authorizationUrl) => {
+      saved.authorization = authorizationUrl;
+    },
+    saveCodeVerifier: (value) => {
+      saved.verifier = value;
+    },
+    codeVerifier: () => saved.verifier!,
+    state: () => 'synthetic-sdk-state',
+    discoveryState: () => saved.discovery,
+    saveDiscoveryState: (value) => {
+      saved.discovery = value;
+    },
+  };
+  const client = new Client({
+    name: 'synthetic-discovery-consumer',
+    version: '1.0.0',
+  });
+  const transport = new StreamableHTTPClientTransport(
+    new URL(origin + '/mcp'),
+    {
+      authProvider,
+      requestInit: { headers: { Host: '127.0.0.1:8787' } },
+      fetch: async (input, init) => {
+        const req = new Request(input, init);
+        if (new URL(req.url).origin !== origin)
+          throw new Error('Unexpected external discovery request');
+        const ctx = createExecutionContext();
+        const response = await probe.fetch(req, fixtureEnv, ctx);
+        await waitOnExecutionContext(ctx);
+        return response;
+      },
+    },
+  );
+  try {
+    await expect(client.connect(transport)).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+    expect(saved.authorization?.origin).toBe(origin);
+    expect(saved.authorization?.searchParams.get('scope')).toBe(
+      'memory:read memory:write',
+    );
+    expect(saved.authorization?.searchParams.get('resource')).toBe(
+      origin + '/mcp',
+    );
+    expect(saved.authorization?.searchParams.get('code_challenge_method')).toBe(
+      'S256',
+    );
+    expect((await request(saved.authorization!.href)).status).toBe(302);
+  } finally {
+    await client.close();
+  }
+});
+
+test('an explicitly read-only authorization remains readable and cannot write', async () => {
+  const tokens = await grant('memory:read');
+  const project = await env.DB.prepare(
+    'SELECT project_id FROM projects LIMIT 1',
+  ).first<{ project_id: string }>();
+  const call = async (name: string, args: Record<string, string>) => {
+    const response = await request('/mcp', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+        Host: '127.0.0.1:8787',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      }),
+    });
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    return response.headers.get('content-type')?.includes('text/event-stream')
+      ? JSON.parse(
+          text
+            .split('\n')
+            .find((line) => line.startsWith('data: '))!
+            .slice(6),
+        )
+      : JSON.parse(text);
+  };
+  expect(
+    await call('probe_read', { project_id: project!.project_id }),
+  ).toHaveProperty('result.structuredContent');
+  expect(
+    await call('probe_write', {
+      project_id: project!.project_id,
+      value: 'synthetic:denied',
+    }),
+  ).toMatchObject({ result: { isError: true } });
+});
+
 test.each([
   { resource: 'http://127.0.0.1:8787/other' },
   { redirect_uri: 'https://evil.example/callback' },
@@ -213,6 +334,40 @@ test('DCR and URL client metadata are disabled', async () => {
       )
     ).status,
   ).toBe(400);
+});
+
+test('native loopback allows a different port but rejects credentials and fragments', async () => {
+  const api = getOAuthApi(providerOptions(loadConfig(fixtureEnv)), fixtureEnv);
+  const native = await api.createClient({
+    clientName: 'Synthetic native client',
+    redirectUris: ['http://127.0.0.1:3000/callback'],
+    tokenEndpointAuthMethod: 'none',
+    grantTypes: ['authorization_code', 'refresh_token'],
+    responseTypes: ['code'],
+  });
+  for (const redirect_uri of [
+    'http://user@127.0.0.1:4567/callback',
+    'http://user:password@127.0.0.1:4567/callback',
+    'http://127.0.0.1:4567/callback#fragment',
+  ]) {
+    expect(
+      (
+        await request(
+          authorization({ client_id: native.clientId, redirect_uri }),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(
+    (
+      await request(
+        authorization({
+          client_id: native.clientId,
+          redirect_uri: 'http://127.0.0.1:4567/callback',
+        }),
+      )
+    ).status,
+  ).toBe(302);
 });
 
 test('rejects oversized streamed body regardless of declared length', async () => {
@@ -476,4 +631,82 @@ test('bounds echoed MCP request IDs before dispatch', async () => {
     }),
   });
   expect(response.status).toBe(400);
+});
+
+test('indexed expiry lookups avoid scanning pending auth tables', async () => {
+  for (const table of ['probe_auth_flows', 'probe_consents']) {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN SELECT rowid FROM ${table} WHERE expires_at <= ? ORDER BY expires_at LIMIT 4`,
+    )
+      .bind(Date.now())
+      .all<{ detail: string }>();
+    expect(plan.results.map((item) => item.detail).join(' ')).toContain(
+      `INDEX ${table}_expiry`,
+    );
+    expect(plan.results.map((item) => item.detail).join(' ')).not.toContain(
+      'SCAN ' + table,
+    );
+  }
+});
+
+test('auth admission has a finite pending limit and bounded expiry cleanup', async () => {
+  await env.DB.prepare('DELETE FROM probe_auth_flows').run();
+  const insert = (state: string, expires: number) =>
+    env.DB.prepare('INSERT INTO probe_auth_flows VALUES (?, ?, ?, ?)').bind(
+      state,
+      'synthetic-browser-hash',
+      '{}',
+      expires,
+    );
+  await env.DB.batch(
+    Array.from({ length: 8 }, (_, index) =>
+      insert(`pending-${index}`, Date.now() + 600000),
+    ),
+  );
+  expect((await request(authorization())).status).toBe(429);
+  expect(
+    await env.DB.prepare('SELECT COUNT(*) AS n FROM probe_auth_flows').first(
+      'n',
+    ),
+  ).toBe(8);
+  await env.DB.prepare('DELETE FROM probe_auth_flows').run();
+  await env.DB.batch(
+    Array.from({ length: 5 }, (_, index) =>
+      insert(`expired-${index}`, Date.now() - 1000),
+    ),
+  );
+  expect((await request(authorization())).status).toBe(302);
+  expect(
+    await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM probe_auth_flows WHERE expires_at <= ?',
+    )
+      .bind(Date.now())
+      .first('n'),
+  ).toBe(1);
+  await env.DB.prepare('DELETE FROM probe_auth_flows').run();
+});
+
+test('two ordinary simultaneous authorizations cannot overfill the last pending slot', async () => {
+  await env.DB.prepare('DELETE FROM probe_auth_flows').run();
+  await env.DB.batch(
+    Array.from({ length: 7 }, (_, index) =>
+      env.DB.prepare('INSERT INTO probe_auth_flows VALUES (?, ?, ?, ?)').bind(
+        `pending-${index}`,
+        'synthetic-browser-hash',
+        '{}',
+        Date.now() + 600000,
+      ),
+    ),
+  );
+  const responses = await Promise.all([
+    request(authorization()),
+    request(authorization()),
+  ]);
+  expect(responses.map((item) => item.status).sort()).toEqual([302, 429]);
+  expect(
+    await env.DB.prepare('SELECT COUNT(*) AS n FROM probe_auth_flows').first(
+      'n',
+    ),
+  ).toBe(8);
+  await env.DB.prepare('DELETE FROM probe_auth_flows').run();
 });

@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { validateStaging } from '../../scripts/preflight-staging.mts';
 
 const config = {
+  account_id: 'b'.repeat(32),
   name: 'synthetic-probe-staging',
   main: 'src/probe.ts',
   compatibility_date: '2026-09-06',
   workers_dev: false,
+  routes: [{ pattern: 'probe.example.com', custom_domain: true }],
   preview_urls: false,
   observability: { enabled: false },
   vars: {
@@ -26,6 +28,66 @@ const config = {
 };
 test('accepts only an explicit staging configuration', () => {
   assert.doesNotThrow(() => validateStaging(config));
+});
+
+const workersDev = {
+  ...config,
+  workers_dev: true,
+  routes: [],
+  vars: {
+    ...config.vars,
+    STAGING_WORKERS_SUBDOMAIN: 'synthetic-owner',
+    MCP_RESOURCE_URL:
+      'https://synthetic-probe-staging.synthetic-owner.workers.dev/mcp',
+  },
+};
+test('accepts the explicitly selected stable workers.dev endpoint', () => {
+  assert.doesNotThrow(() => validateStaging(workersDev));
+});
+test('rejects absent or mismatched custom routes and ambiguous routing', () => {
+  for (const routes of [
+    undefined,
+    [],
+    [{ pattern: 'unrelated.example.com', custom_domain: true }],
+    [{ pattern: '*.example.com/*' }],
+  ])
+    assert.throws(() => validateStaging({ ...config, routes }));
+  assert.throws(() =>
+    validateStaging({ ...workersDev, routes: config.routes }),
+  );
+});
+test('requires account identity and exact worker/subdomain correspondence without previews or tracing', () => {
+  for (const bad of [
+    { ...workersDev, account_id: undefined },
+    { ...workersDev, account_id: '<ACCOUNT>' },
+    { ...workersDev, name: 'other-staging' },
+    {
+      ...workersDev,
+      vars: { ...workersDev.vars, STAGING_WORKERS_SUBDOMAIN: 'other' },
+    },
+    {
+      ...workersDev,
+      vars: { ...workersDev.vars, STAGING_WORKERS_SUBDOMAIN: '' },
+    },
+    {
+      ...workersDev,
+      vars: {
+        ...workersDev.vars,
+        MCP_RESOURCE_URL:
+          'https://preview-synthetic-probe-staging.synthetic-owner.workers.dev/mcp',
+      },
+    },
+    { ...workersDev, preview_urls: true },
+    {
+      ...workersDev,
+      observability: { enabled: false, traces: { enabled: true } },
+    },
+    {
+      ...workersDev,
+      observability: { enabled: false, logs: { enabled: true } },
+    },
+  ])
+    assert.throws(() => validateStaging(bad));
 });
 test('refuses placeholders, production entry, local bindings and invocation logging', () => {
   for (const bad of [

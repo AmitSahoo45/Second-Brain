@@ -37,7 +37,10 @@ export function providerOptions(
       ...(config.environment === 'local'
         ? {}
         : { authorization_servers: [config.origin] }),
-      scopes_supported: ['memory:read'],
+      // Normal SDK discovery takes these advertised capabilities (and the
+      // provider's matching 401 challenge) as its requested consent scopes.
+      // Actual grants may still explicitly request only memory:read.
+      scopes_supported: ['memory:read', 'memory:write'],
       bearer_methods_supported: ['header'],
       resource_name: 'Synthetic T01 probe',
     },

@@ -4,6 +4,12 @@ import type {
 } from '@cloudflare/workers-oauth-provider';
 import type { AppConfig } from '../config';
 import { createGrant, provisionOwner } from '../db/auth-store';
+import {
+  consumeAuthFlow,
+  consumeConsent,
+  createAuthFlow,
+  createConsent,
+} from '../db/auth-flow-store';
 import { HttpError, type ProbeEnv } from './types';
 
 export async function hash(value: string) {
@@ -55,6 +61,9 @@ export async function ownerLogin(
         throw new HttpError(400, 'invalid_request');
     let auth: AuthRequest;
     try {
+      const redirect = new URL(url.searchParams.get('redirect_uri') ?? '');
+      if (redirect.username || redirect.password || redirect.hash)
+        throw new Error('Invalid redirect grammar');
       auth = await api.parseAuthRequest(request);
     } catch {
       throw new HttpError(400, 'invalid_request');
@@ -71,17 +80,16 @@ export async function ownerLogin(
       throw new HttpError(400, 'invalid_request');
     const state = crypto.randomUUID();
     const browser = crypto.randomUUID();
-    await env.DB.prepare('DELETE FROM probe_auth_flows WHERE expires_at <= ?')
-      .bind(Date.now())
-      .run();
-    await env.DB.prepare('INSERT INTO probe_auth_flows VALUES (?, ?, ?, ?)')
-      .bind(
+    if (
+      !(await createAuthFlow(
+        env.DB,
         state,
         await hash(browser),
         JSON.stringify(auth),
-        Date.now() + 600000,
-      )
-      .run();
+        Date.now(),
+      ))
+    )
+      throw new HttpError(429, 'temporarily_unavailable');
     const github = new URL('https://github.com/login/oauth/authorize');
     github.search = new URLSearchParams({
       client_id: config.githubClientId,
@@ -108,11 +116,12 @@ export async function ownerLogin(
       url.searchParams.getAll('code').length !== 1
     )
       throw new HttpError(400, 'invalid_request');
-    const flow = await env.DB.prepare(
-      'DELETE FROM probe_auth_flows WHERE state = ? AND browser_hash = ? AND expires_at > ? RETURNING request_json',
-    )
-      .bind(state, await hash(browser), Date.now())
-      .first<{ request_json: string }>();
+    const flow = await consumeAuthFlow(
+      env.DB,
+      state,
+      await hash(browser),
+      Date.now(),
+    );
     if (!flow) throw new HttpError(400, 'invalid_request');
     const tokenResponse = await fetch(
       'https://github.com/login/oauth/access_token',
@@ -157,19 +166,18 @@ export async function ownerLogin(
     const owner = await provisionOwner(env.DB, config.ownerSubject);
     const session = crypto.randomUUID();
     const csrf = crypto.randomUUID();
-    await env.DB.prepare('DELETE FROM probe_consents WHERE expires_at <= ?')
-      .bind(Date.now())
-      .run();
-    await env.DB.prepare('INSERT INTO probe_consents VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(
+    if (
+      !(await createConsent(
+        env.DB,
         await hash(session),
         csrf,
         flow.request_json,
         owner.owner_id,
         owner.project_id,
-        Date.now() + 600000,
-      )
-      .run();
+        Date.now(),
+      ))
+    )
+      throw new HttpError(429, 'temporarily_unavailable');
     const auth = JSON.parse(flow.request_json) as AuthRequest;
     const client = await api.lookupClient(auth.clientId);
     const html = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Authorize synthetic probe</title><h1>Authorize synthetic probe</h1><p>Client: ${escape(client?.clientName ?? auth.clientId)}</p><p>Project: Synthetic T01 probe (${escape(owner.project_id)})</p><p>Permissions: ${escape(auth.scope.join(', '))}</p><p>This experiment stores only synthetic test data.</p><form method="post" action="/oauth/consent"><input type="hidden" name="csrf" value="${csrf}"><button name="approve" value="yes">Approve</button><button name="approve" value="no">Deny</button></form></html>`;
@@ -200,11 +208,12 @@ export async function ownerLogin(
       form.getAll('approve').length !== 1
     )
       throw new HttpError(403, 'access_denied');
-    const consent = await env.DB.prepare(
-      'DELETE FROM probe_consents WHERE session_hash = ? AND csrf = ? AND expires_at > ? RETURNING *',
-    )
-      .bind(await hash(session), form.get('csrf'), Date.now())
-      .first<{ request_json: string; owner_id: string; project_id: string }>();
+    const consent = await consumeConsent(
+      env.DB,
+      await hash(session),
+      form.get('csrf')!,
+      Date.now(),
+    );
     if (!consent || form.get('approve') !== 'yes')
       throw new HttpError(403, 'access_denied');
     const auth = JSON.parse(consent.request_json) as AuthRequest;

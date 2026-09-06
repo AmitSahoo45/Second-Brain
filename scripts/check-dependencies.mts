@@ -106,16 +106,22 @@ let notices =
   '# Third-party notices\n\nGenerated from actual installed artifacts by `npm run check:dependencies`. Exact packages and registry integrity hashes are in package-lock.json; regenerated detailed inventory is in evidence/dependencies.json. No third-party application snippets were copied.\n\nSDK v2 package manifests declare MIT, while shipped LICENSE files describe an Apache-2.0 transition, residual MIT contributions and CC-BY-4.0 documentation; the full shipped text below controls this disclosure. Released Cloudflare tooling pins prerelease Miniflare 5.20260903.0-alpha. Missing bundled licenses are explicitly recorded in the inventory, not inferred to be absent upstream.\n\n';
 for (const [digest, entry] of licenses)
   notices += `## License text ${digest.slice(0, 12)}\n\nArtifacts: ${entry.packages.join(', ')}\n\n\`\`\`text\n${entry.text.trimEnd()}\n\`\`\`\n\n`;
-for (const filename of ['LICENSE-MIT', 'LICENSE-APACHE']) {
-  try {
-    const value = await readFile(
-      join('evidence/research/upstream-licenses', filename),
-      'utf8',
+const supplementHashes = {
+  'LICENSE-MIT':
+    '9bb3b077cc8628334bab25961223dd8207252c8a56aa054195be38f1c042aaf4',
+  'LICENSE-APACHE':
+    '62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a',
+};
+for (const [filename, expectedHash] of Object.entries(supplementHashes)) {
+  const value = await readFile(
+    join('third-party/workers-sdk', filename),
+    'utf8',
+  );
+  if (createHash('sha256').update(value).digest('hex') !== expectedHash)
+    throw new Error(
+      `Required upstream license integrity mismatch: ${filename}`,
     );
-    notices += `## Workers SDK upstream ${filename}\n\nSupplement for package archives missing bundled license text; source commit be87ff0382c53a294e948e49419d25d653c50e86, https://github.com/cloudflare/workers-sdk/blob/be87ff0382c53a294e948e49419d25d653c50e86/${filename}\n\n\`\`\`text\n${value.trimEnd()}\n\`\`\`\n\n`;
-  } catch {
-    /* Optional local evidence; existing supplement below remains stable. */
-  }
+  notices += `## Workers SDK upstream ${filename}\n\nSupplement for package archives missing bundled license text; source commit be87ff0382c53a294e948e49419d25d653c50e86, https://github.com/cloudflare/workers-sdk/blob/be87ff0382c53a294e948e49419d25d653c50e86/${filename}\n\n\`\`\`text\n${value.trimEnd()}\n\`\`\`\n\n`;
 }
 // A check refreshes machine evidence. Notice regeneration is an explicit reviewable action.
 if (process.argv.includes('--write-notices'))

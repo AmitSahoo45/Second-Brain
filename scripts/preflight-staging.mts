@@ -5,6 +5,13 @@ import { pathToFileURL } from 'node:url';
 export function validateStaging(value: unknown) {
   const config = value as Record<string, unknown>;
   const vars = config.vars as Record<string, string> | undefined;
+  const observability = config.observability as
+    | {
+        enabled?: boolean;
+        logs?: { enabled?: boolean; invocation_logs?: boolean };
+        traces?: { enabled?: boolean };
+      }
+    | undefined;
   const db = (
     config.d1_databases as
       { binding: string; database_id: string }[] | undefined
@@ -15,12 +22,18 @@ export function validateStaging(value: unknown) {
   if (
     !vars ||
     config.main !== 'src/probe.ts' ||
-    !String(config.name).endsWith('-staging') ||
+    typeof config.name !== 'string' ||
+    !/^[a-z0-9][a-z0-9-]*-staging$/.test(config.name) ||
+    config.name.length > 63 ||
+    typeof config.account_id !== 'string' ||
+    !/^[0-9a-f]{32}$/i.test(config.account_id) ||
     vars.APP_ENV !== 'staging' ||
-    config.workers_dev !== false ||
+    typeof config.workers_dev !== 'boolean' ||
     config.preview_urls !== false ||
-    (config.observability as { enabled?: boolean } | undefined)?.enabled !==
-      false
+    observability?.enabled !== false ||
+    observability.logs?.enabled === true ||
+    observability.logs?.invocation_logs === true ||
+    observability.traces?.enabled === true
   )
     throw new Error(
       'Staging must use the isolated probe entry, explicit routing and disabled invocation logging.',
@@ -29,6 +42,7 @@ export function validateStaging(value: unknown) {
   if (
     resource.href !== vars.MCP_RESOURCE_URL ||
     resource.protocol !== 'https:' ||
+    resource.port ||
     resource.pathname !== '/mcp' ||
     resource.search ||
     resource.hash ||
@@ -38,6 +52,30 @@ export function validateStaging(value: unknown) {
     resource.hostname.includes('REPLACE')
   )
     throw new Error('A real canonical HTTPS /mcp resource is required.');
+  const routes = config.routes as
+    { pattern?: unknown; custom_domain?: unknown }[] | undefined;
+  if (config.workers_dev) {
+    const subdomain = vars.STAGING_WORKERS_SUBDOMAIN;
+    if (
+      !subdomain ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain) ||
+      resource.hostname !== `${config.name}.${subdomain}.workers.dev` ||
+      (routes !== undefined && (!Array.isArray(routes) || routes.length !== 0))
+    )
+      throw new Error(
+        'workers.dev staging must match the exact Worker name and selected account subdomain, without additional routes.',
+      );
+  } else if (
+    !Array.isArray(routes) ||
+    routes.length !== 1 ||
+    routes[0]?.custom_domain !== true ||
+    routes[0].pattern !== resource.hostname ||
+    resource.hostname.endsWith('.workers.dev')
+  ) {
+    throw new Error(
+      'Custom-domain staging requires one exact matching canonical hostname route.',
+    );
+  }
   if (
     !/^[1-9][0-9]{0,19}$/.test(vars.GITHUB_OWNER_ID ?? '') ||
     !vars.GITHUB_CLIENT_ID ||
