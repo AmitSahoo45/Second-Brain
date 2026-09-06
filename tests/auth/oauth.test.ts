@@ -107,15 +107,14 @@ async function login(
   responses: { token?: () => Response; identity?: () => Response } = {},
 ) {
   const started = await start(scope);
+  const outgoing: Request[] = [];
   const upstream = vi
     .spyOn(globalThis, 'fetch')
-    .mockImplementation(async (input) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
+    .mockImplementation(async (input, init) => {
+      // Exercise native Workers option validation before returning a fixture.
+      const outbound = new Request(input, init);
+      outgoing.push(outbound);
+      const url = outbound.url;
       if (url === 'https://github.com/login/oauth/access_token')
         return (
           responses.token?.() ??
@@ -142,7 +141,7 @@ async function login(
         new URLSearchParams({ state: started.state, code: 'synthetic-code' }),
       { headers: { cookie: started.cookie } },
     );
-    return { response, started };
+    return { response, started, outgoing };
   } finally {
     upstream.mockRestore();
   }
@@ -490,6 +489,41 @@ test.each(['token', 'identity'] as const)(
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'access_denied' });
+  },
+);
+
+test.each([
+  ['token', 302],
+  ['identity', 307],
+] as const)(
+  'callback denies a %s redirect without forwarding credentials to its target',
+  async (dependency, status) => {
+    const redirectTarget = 'https://synthetic-untrusted.example/collect';
+    const { response, outgoing } = await login(
+      123456789,
+      'memory:read memory:write',
+      {
+        [dependency]: () =>
+          new Response(null, {
+            status,
+            headers: { location: redirectTarget },
+          }),
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'access_denied' });
+    expect(response.headers.get('location')).toBeNull();
+    expect(outgoing.map((request) => request.url)).toEqual(
+      dependency === 'token'
+        ? ['https://github.com/login/oauth/access_token']
+        : [
+            'https://github.com/login/oauth/access_token',
+            'https://api.github.com/user',
+          ],
+    );
+    // Native Requests carry a policy that never follows the credential-bearing
+    // POST or Authorization header to a Location supplied by the upstream.
+    for (const outbound of outgoing) expect(outbound.redirect).toBe('manual');
   },
 );
 

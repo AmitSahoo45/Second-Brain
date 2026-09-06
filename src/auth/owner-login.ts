@@ -152,7 +152,7 @@ export async function ownerLogin(
           code,
           redirect_uri: config.origin + '/oauth/callback',
         }),
-        redirect: 'error',
+        redirect: 'manual',
         signal: AbortSignal.timeout(10000),
       }),
     );
@@ -172,7 +172,7 @@ export async function ownerLogin(
           Accept: 'application/vnd.github+json',
           'User-Agent': 'shared-memory-probe',
         },
-        redirect: 'error',
+        redirect: 'manual',
         signal: AbortSignal.timeout(10000),
       }),
     );
