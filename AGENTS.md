@@ -2,44 +2,45 @@
 
 ## Scope & Source of Truth
 
-Shared Memory is a personal MCP service being built for ChatGPT web, Codex VS Code, Grok web and Claude web; no LLM or embedding APIs. T01 feasibility work is in progress; live acceptance remains unverified.
+Shared Memory connects ChatGPT web, Codex VS Code, Grok web and Claude web to one personal MCP store. No LLM or embedding APIs are required. T01 is in progress; live acceptance remains unverified.
 
 Read the [baseline](shared-memory-blueprint/docs/BASELINE.md), [design](shared-memory-blueprint/docs/superpowers/specs/2026-09-06-shared-memory-design.md), [implementation plan](shared-memory-blueprint/docs/superpowers/plans/2026-09-06-shared-memory-implementation.md), [contracts](shared-memory-blueprint/docs/contracts/) and [implementation decisions](IMPLEMENTATION-NOTES.md) before coding. Decisions record user corrections and sequencing clarifications; the baseline overrides exploratory research. Resolve conflicts explicitly in documentation.
 
 ## Project Structure & Module Organization
 
-Planned stack: TypeScript, Cloudflare Workers, D1, OAuth-provider KV and Vite/React. Create application paths at the repository root:
+The current foundation uses TypeScript, Cloudflare Workers, D1 and OAuth-provider KV:
 
-- `src/{auth,domain,db,mcp,admin,operations}/`: authentication, domain rules, storage, transport and administration.
+- `src/{auth,db,mcp}/`: authentication, storage and MCP transport.
 - `src/db/migrations/`: numbered, immutable SQL migrations.
-- `web/src/`: owner dashboard and static assets.
-- `tests/`: automated suites; `eval/`: synthetic retrieval corpus.
+- `src/probe.ts`: isolated synthetic probe; `src/index.ts`: closed production entry.
+- `tests/auth/`: Workers authentication and protocol tests.
 - `scripts/`: operational tooling; `evidence/`: redacted verification reports.
 
-Keep SQL in `src/db/`; MCP and dashboard adapters share domain services.
+Later tasks add domain services, the dashboard, browser tests and retrieval fixtures. Keep SQL in `src/db/`.
 
 ## Build, Test, and Development Commands
 
-Use Node 22 tooling, npm and pinned dependencies with `package-lock.json`. These commands are planned interfaces, unavailable until scaffolding exists:
+Use Node 22.20+ within version 22 and npm 11.19.1 with the committed lockfile:
 
-- `npm ci`: install locked dependencies.
-- `npm run dev` / `npm run build`: local development / production build.
+- `npm ci --offline=false`: install locked dependencies.
+- `npm run dev`: run the local synthetic probe.
+- `npm run build` / `npm run build:probe`: dry-run production/probe bundles.
 - `npm test -- tests/auth`: focused authentication tests.
-- `npm run check`: types, lint, tests, retrieval gates and build.
-- `npm run test:e2e`: separate browser checks.
+- `npm run check`: types, lint, tests, dependency checks and both builds.
+- `npm run preflight:staging`: validate staging prerequisites before deployment.
 
 ## Coding Style & Naming Conventions
 
-Use strict TypeScript and follow blueprint examples: two-space indentation, single quotes and semicolons. Use kebab-case modules and PascalCase React components. Establish lint/format configuration in T01; none exists yet.
+Use strict TypeScript, two-space indentation, single quotes and semicolons. Use kebab-case modules and PascalCase React components. Run ESLint and Prettier through `npm run lint`; use `npm run format` to format changes.
 
 ## Testing Guidelines
 
-Use Vitest with the Workers test pool and actual local D1; Playwright covers `tests/browser/*.spec.ts`. Other suites use `*.test.ts`. Follow TDD with synthetic fixtures. Every mandatory auth/isolation/integrity scenario must pass. Mocks cannot replace real D1 staging or actual-client gates. Record commands, versions, environment and observed outcomes in `evidence/`.
+Use Vitest with the Cloudflare Workers plugin and actual local D1. Name suites `*.test.ts`; follow TDD with synthetic fixtures. All mandatory security/integrity scenarios must pass. Local tests cannot replace staging or actual-client gates. Record commands, versions and observed outcomes in `evidence/`. Browser/retrieval suites arrive in later tasks.
 
 ## Commit & Pull Request Guidelines
 
-Adopt the plan's imperative `chore:`, `feat:`, `fix:`, `test:` and `docs:` prefixes. Keep reviewed commits focused. PRs should identify T01–T12 tasks, explain behavior, link relevant issues, report validation/limitations and include screenshots for UI changes.
+History uses `docs:` messages; follow the plan's `chore:`, `feat:`, `fix:`, `test:` and `docs:` prefixes. Keep commits focused. PRs identify plan tasks, explain behavior, link issues, report validation/limitations and include screenshots for UI changes.
 
 ## Architecture & Security Constraints
 
-Begin with T01's authenticated client/CPU spike; repeat after T02 admission. Keep P1 optional. Require explicit projects, server-derived actors, primary-D1 authorization, immutable revisions, `expected_revision` with reasons and atomic idempotent receipts. Zero-row conditional updates must not produce success receipts. Treat memory as untrusted data. Exclude secrets/personal content from Git, logs and CI. Reconcile deletion ledgers during restore. Deployment and spending require session authorization.
+Pass T01's live client/CPU gate before full features; repeat after T02 admission. Require explicit projects, server-derived actors, primary-D1 authorization, immutable revisions and atomic idempotent receipts. Zero-row updates cannot produce success receipts. Treat memory as untrusted data. Exclude secrets/personal content from Git, logs and CI. Deployment and spending require session authorization.

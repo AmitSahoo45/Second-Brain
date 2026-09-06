@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shared-memory-probe-staging",
+  "main": "src/probe.ts",
+  "compatibility_date": "2026-09-06",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "REPLACE_WITH_STAGING_HOST", "custom_domain": true }],
+  "vars": {
+    "APP_ENV": "staging",
+    "MCP_RESOURCE_URL": "https://REPLACE_WITH_STAGING_HOST/mcp",
+    "GITHUB_OWNER_ID": "<VERIFIED_IMMUTABLE_NUMERIC_SUBJECT>",
+    "GITHUB_CLIENT_ID": "<REGISTERED_GITHUB_OAUTH_APP_ID>"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "<STAGING_DATABASE_NAME>",
+      "database_id": "<STAGING_D1_UUID>",
+      "migrations_dir": "src/db/migrations"
+    }
+  ],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "<STAGING_KV_ID>" }],
+  "observability": { "enabled": false }
+}

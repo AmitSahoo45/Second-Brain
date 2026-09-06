@@ -2,3 +2,5 @@
 *.png binary
 # Preserve the delivered planning package and its published checksums.
 shared-memory-blueprint/** -text
+THIRD_PARTY_NOTICES.md -text -whitespace
+worker-configuration.d.ts -whitespace
