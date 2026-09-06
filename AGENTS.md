@@ -2,13 +2,13 @@
 
 ## Scope & Source of Truth
 
-Shared Memory connects ChatGPT web, Codex VS Code, Grok web and Claude web to one personal MCP store. No LLM or embedding APIs are required. T01 is in progress; live acceptance remains unverified.
+Shared Memory connects ChatGPT web, Codex VS Code and Claude web to one text-only personal MCP store. No LLM or embedding APIs are required. T01 is in progress; live acceptance remains unverified.
 
 Read the [baseline](shared-memory-blueprint/docs/BASELINE.md), [design](shared-memory-blueprint/docs/superpowers/specs/2026-09-06-shared-memory-design.md), [implementation plan](shared-memory-blueprint/docs/superpowers/plans/2026-09-06-shared-memory-implementation.md), [contracts](shared-memory-blueprint/docs/contracts/) and [implementation decisions](IMPLEMENTATION-NOTES.md) before coding. Decisions record user corrections and sequencing clarifications; the baseline overrides exploratory research. Resolve conflicts explicitly in documentation.
 
 ## Project Structure & Module Organization
 
-The current foundation uses TypeScript, Cloudflare Workers, D1 and OAuth-provider KV:
+The foundation uses TypeScript, Cloudflare Workers, D1 and OAuth-provider KV:
 
 - `src/{auth,db,mcp}/`: authentication, storage and MCP transport.
 - `src/db/migrations/`: numbered, immutable SQL migrations.
@@ -26,6 +26,7 @@ Use Node 22.20+ within version 22 and npm 11.19.1 with the committed lockfile:
 - `npm run dev`: run the local synthetic probe.
 - `npm run build` / `npm run build:probe`: dry-run production/probe bundles.
 - `npm test -- tests/auth`: focused authentication tests.
+- `npm run test:browser:consent`: verify native browser consent and callback delivery.
 - `npm run check`: types, lint, tests, dependency checks and both builds.
 - `npm run preflight:staging`: validate staging prerequisites before deployment.
 
@@ -35,11 +36,11 @@ Use strict TypeScript, two-space indentation, single quotes and semicolons. Use 
 
 ## Testing Guidelines
 
-Use Vitest with the Cloudflare Workers plugin and actual local D1. Name suites `*.test.ts`; follow TDD with synthetic fixtures. All mandatory security/integrity scenarios must pass. Local tests cannot replace staging or actual-client gates. Record commands, versions and observed outcomes in `evidence/`. Browser/retrieval suites arrive in later tasks.
+Use Vitest with the Workers plugin and local D1. Name suites `*.test.ts`; follow TDD with synthetic fixtures. Consent browser tests require Edge or `BROWSER_EXECUTABLE`. Mandatory security/integrity scenarios must pass. Local tests cannot replace staging or actual-client gates. Record commands, versions and outcomes in `evidence/`. Retrieval suites arrive later.
 
 ## Commit & Pull Request Guidelines
 
-History uses `docs:` messages; follow the plan's `chore:`, `feat:`, `fix:`, `test:` and `docs:` prefixes. Keep commits focused. PRs identify plan tasks, explain behavior, link issues, report validation/limitations and include screenshots for UI changes.
+Use focused `chore:`, `feat:`, `fix:`, `test:` and `docs:` commits. PRs identify plan tasks, explain behavior, link issues, report validation/limitations and include screenshots for UI changes.
 
 ## Architecture & Security Constraints
 

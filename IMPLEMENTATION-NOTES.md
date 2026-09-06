@@ -4,11 +4,13 @@ These notes apply the supplied blueprint to the actual workspace. The original p
 
 ## Required clients — user correction, 6 September 2026
 
-The user specified ChatGPT web, the Codex VS Code extension, Grok and Claude web sharing one common brain. Treat Grok as Grok web unless corrected. These four surfaces replace the blueprint's five-surface acceptance matrix. Codex CLI and Claude Code are useful optional diagnostics, not substitute evidence for a required surface.
+The latest user correction requires **ChatGPT web, the Codex VS Code extension and Claude web** sharing one common brain. Grok is removed from required clients. These three surfaces replace the blueprint's five-surface acceptance matrix and the earlier four-client correction. Codex CLI and Claude Code are optional diagnostics, not substitute evidence for a required surface.
 
-Every required client uses the same canonical HTTPS `/mcp` resource, with independent authorization grants to explicit projects. All four must prove actual login, tool discovery, read, write, update, reconnect/refresh and revocation. The service does not automatically capture chats or synchronize vendor-native memory.
+Every required client uses the same canonical HTTPS `/mcp` resource, with independent authorization grants to explicit projects. Required clients must prove actual login, tool discovery, read, write, update, reconnect/refresh and revocation. The service does not automatically capture chats or synchronize vendor-native memory.
 
-[Grok's official connector documentation](https://docs.x.ai/grok/connectors) supports custom MCP servers reachable on the public internet. That establishes a documented integration route, not a successful test on this user's account. Record the actual registration method and exact hosted redirect URI during setup; do not infer a wildcard allowlist from examples.
+V1 stays **text-only**: text memory through MCP, without image/audio/video ingestion or rich tool widgets. The immediate user-requested milestone is to finish the current browser consent regression fix, then demonstrate a shared write/read between two actual target clients. Use ChatGPT web and Claude web for this initial proof. Report compatibility blockers explicitly before expanding implementation; SDK diagnostics do not satisfy this milestone. The remaining Codex and security/CPU gates are not implicitly waived.
+
+The user confirmed custom-connector forms are available in Claude web and Grok, but this is only feature-availability evidence. Grok needs no v1 registration or acceptance run. Record the actual registration method and exact hosted redirect URI for required clients; do not infer a wildcard allowlist from examples.
 
 ## T01/T02 sequencing
 

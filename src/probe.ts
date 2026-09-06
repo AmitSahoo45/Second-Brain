@@ -87,7 +87,8 @@ export default {
     }
     const safe = new Response(response.body, response);
     safe.headers.set('cache-control', 'no-store');
-    safe.headers.set('referrer-policy', 'no-referrer');
+    if (!safe.headers.has('referrer-policy'))
+      safe.headers.set('referrer-policy', 'no-referrer');
     safe.headers.set('x-content-type-options', 'nosniff');
     return safe;
   },

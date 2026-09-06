@@ -91,8 +91,11 @@ function cookie(response: Response) {
   return response.headers.get('set-cookie')!.split(';')[0]!;
 }
 
-async function start(scope = 'memory:read memory:write') {
-  const response = await request(authorization({ scope }));
+async function start(
+  scope = 'memory:read memory:write',
+  overrides: Record<string, string> = {},
+) {
+  const response = await request(authorization({ scope, ...overrides }));
   expect(response.status).toBe(302);
   const githubUrl = new URL(response.headers.get('location')!);
   return {
@@ -105,8 +108,9 @@ async function login(
   subject = 123456789,
   scope = 'memory:read memory:write',
   responses: { token?: () => Response; identity?: () => Response } = {},
+  overrides: Record<string, string> = {},
 ) {
-  const started = await start(scope);
+  const started = await start(scope, overrides);
   const outgoing: Request[] = [];
   const upstream = vi
     .spyOn(globalThis, 'fetch')
@@ -147,6 +151,24 @@ async function login(
   }
 }
 
+function completionUrl(html: string) {
+  const href = html.match(/<a href="([^"]+)"/)?.[1];
+  expect(href).toBeDefined();
+  return new URL(
+    href!.replace(
+      /&(amp|quot|#39|lt|gt);/g,
+      (entity) =>
+        ({
+          '&amp;': '&',
+          '&quot;': '"',
+          '&#39;': "'",
+          '&lt;': '<',
+          '&gt;': '>',
+        })[entity]!,
+    ),
+  );
+}
+
 async function grant(scope = 'memory:read memory:write') {
   const { response } = await login(123456789, scope);
   expect(response.status).toBe(200);
@@ -162,10 +184,8 @@ async function grant(scope = 'memory:read memory:write') {
     },
     body: new URLSearchParams({ csrf, approve: 'yes' }),
   });
-  expect(consent.status).toBe(302);
-  const code = new URL(consent.headers.get('location')!).searchParams.get(
-    'code',
-  )!;
+  expect(consent.status).toBe(200);
+  const code = completionUrl(await consent.text()).searchParams.get('code')!;
   const tokenResponse = await request('/oauth/token', {
     method: 'POST',
     body: new URLSearchParams({
@@ -597,6 +617,121 @@ test('consent requires exact Origin and CSRF value', async () => {
       })
     ).status,
   ).toBe(403);
+});
+
+test('only the consent document preserves form Origin and completion escapes the validated client URL', async () => {
+  const redirect =
+    "https://client.example/callback?label='quoted'&other=%3Cscript%3E";
+  const api = getOAuthApi(providerOptions(loadConfig(fixtureEnv)), fixtureEnv);
+  const client = await api.createClient({
+    clientName: 'Synthetic <script>client</script>',
+    redirectUris: [redirect],
+    tokenEndpointAuthMethod: 'none',
+    grantTypes: ['authorization_code'],
+    responseTypes: ['code'],
+  });
+  const { response } = await login(
+    123456789,
+    'memory:read memory:write',
+    {},
+    {
+      client_id: client.clientId,
+      redirect_uri: redirect,
+    },
+  );
+  expect(response.headers.get('referrer-policy')).toBe('strict-origin');
+  const html = await response.text();
+  expect(html).toContain('&lt;script&gt;client&lt;/script&gt;');
+  expect(html).not.toContain('<script>');
+  const csrf = html.match(/name="csrf" value="([^"]+)"/)![1]!;
+  const init = {
+    method: 'POST',
+    headers: {
+      origin,
+      cookie: cookie(response),
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ csrf, approve: 'yes' }),
+  };
+  const completed = await request('/oauth/consent', init);
+  expect(completed.status).toBe(200);
+  expect(completed.headers.get('location')).toBeNull();
+  expect(completed.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(completed.headers.get('content-security-policy')).toContain(
+    "form-action 'none'",
+  );
+  const document = await completed.text();
+  expect(document.includes('http-equiv="refresh"')).toBe(true);
+  expect(document.includes('label=%27quoted%27&amp;other=')).toBe(true);
+  expect(document.includes('rel="noreferrer"')).toBe(true);
+  expect(document.includes('<script>')).toBe(false);
+  const target = completionUrl(document);
+  expect(target.origin + target.pathname).toBe(
+    'https://client.example/callback',
+  );
+  expect(target.searchParams.get('label')).toBe("'quoted'");
+  expect(target.searchParams.get('other')).toBe('<script>');
+  expect(target.searchParams.get('state')).toBe('synthetic-client-state');
+  expect(target.searchParams.get('code')).toBeTruthy();
+  expect((await request('/oauth/consent', init)).status).toBe(403);
+  expect((await request('/health')).headers.get('referrer-policy')).toBe(
+    'no-referrer',
+  );
+});
+
+test.each([undefined, 'null', 'https://evil.example'])(
+  'consent still rejects Origin %s without consuming the consent',
+  async (originHeader) => {
+    const { response } = await login();
+    const csrf = (await response.text()).match(
+      /name="csrf" value="([^"]+)"/,
+    )![1]!;
+    const before = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM probe_consents',
+    ).first('n');
+    const headers: Record<string, string> = {
+      cookie: cookie(response),
+      'content-type': 'application/x-www-form-urlencoded',
+    };
+    if (originHeader !== undefined) headers.origin = originHeader;
+    const denied = await request('/oauth/consent', {
+      method: 'POST',
+      headers,
+      body: new URLSearchParams({ csrf, approve: 'yes' }),
+    });
+    expect(denied.status).toBe(403);
+    expect(
+      await env.DB.prepare('SELECT COUNT(*) AS n FROM probe_consents').first(
+        'n',
+      ),
+    ).toBe(before);
+    await env.DB.prepare('DELETE FROM probe_consents').run();
+  },
+);
+
+test('denying consent consumes it once and creates no grant', async () => {
+  const { response } = await login();
+  const csrf = (await response.text()).match(
+    /name="csrf" value="([^"]+)"/,
+  )![1]!;
+  const before = await env.DB.prepare('SELECT COUNT(*) AS n FROM grants').first(
+    'n',
+  );
+  const init = {
+    method: 'POST',
+    headers: {
+      origin,
+      cookie: cookie(response),
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ csrf, approve: 'no' }),
+  };
+  expect((await request('/oauth/consent', init)).status).toBe(403);
+  init.body.set('approve', 'yes');
+  expect((await request('/oauth/consent', init)).status).toBe(403);
+  expect(
+    await env.DB.prepare('SELECT COUNT(*) AS n FROM grants').first('n'),
+  ).toBe(before);
 });
 
 test('official SDK authenticates, discovers, writes and reads synthetic D1 probe data', async () => {

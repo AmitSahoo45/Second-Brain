@@ -212,6 +212,7 @@ export async function ownerLogin(
     return new Response(html, {
       headers: {
         'content-type': 'text/html; charset=utf-8',
+        'referrer-policy': 'strict-origin',
         'set-cookie': sessionCookie('probe_consent', session, config),
         'content-security-policy':
           "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -264,10 +265,14 @@ export async function ownerLogin(
       metadata: { actorId },
       props: { actorId },
     });
-    return new Response(null, {
-      status: 302,
+    const destination = escape(completed.redirectTo);
+    const html = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Authorization complete</title><meta http-equiv="refresh" content="0; URL=${destination}"><h1>Authorization complete</h1><p><a href="${destination}" rel="noreferrer">Continue to client</a></p></html>`;
+    return new Response(html, {
       headers: {
-        location: completed.redirectTo,
+        'content-type': 'text/html; charset=utf-8',
+        'referrer-policy': 'no-referrer',
+        'content-security-policy':
+          "default-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
         'set-cookie': sessionCookie('probe_consent', '', config, true),
       },
     });

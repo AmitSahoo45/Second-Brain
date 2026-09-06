@@ -2,7 +2,7 @@
 
 This repository currently provides an authenticated, disposable MCP probe. It does not yet implement the memory service or dashboard. `src/index.ts`, the production entry, returns HTTP 503. Only `src/probe.ts` exposes `probe_read` and `probe_write`; it rejects `APP_ENV=production`.
 
-The four required live surfaces are **ChatGPT web, Codex VS Code, Grok web and Claude web**. Local workerd/D1 tests and the official MCP SDK client are automated evidence only. Their actual connections and Cloudflare CPU measurements remain pending. G1 must pass before full memory features begin; T02 admission then requires a second live CPU/client checkpoint.
+The three required v1 surfaces are **ChatGPT web, Codex VS Code and Claude web**; v1 is text-only. The first live milestone is shared write/read between ChatGPT web and Claude web, with blockers reported before expansion. Local workerd/D1 tests and the official MCP SDK client are automated evidence only. Actual-client acceptance and Cloudflare CPU measurements remain pending. G1 must pass before full memory features begin; T02 admission then requires a second live CPU/client checkpoint.
 
 ## Local verification
 
@@ -15,6 +15,10 @@ npm test -- tests/auth/config.test.ts
 ```
 
 `check` runs strict types, ESLint/Prettier, real workerd/KV/D1 authentication and SDK tests, Node tooling tests, dependency/license inventory, and both production/probe dry-run bundles. No live resources are created. Windows sandbox restrictions may require allowing workerd child processes. npm 11 currently prints lifecycle-script approval advisories for bundled esbuild/workerd and core-js-pure; they are disclosed in the implementation evidence, and the actual runtime/build checks are required.
+
+Run `npm run test:browser:consent` as a separate required gate when changing browser consent behavior. It uses installed Microsoft Edge on Windows, or an installed Chromium-family browser selected by `BROWSER_EXECUTABLE`, with an isolated temporary profile. Missing browser support fails explicitly. The test bundles the actual app with a test-only registration fixture, uses local Miniflare/D1/KV and synthetic GitHub responses, and checks native form headers, loopback/HTTPS client handoff, query escaping, fallback navigation, denial, bad CSRF, and code exchange. The synthetic HTTPS client is intercepted before network access. Output contains only browser version and pass/count metadata. No actual client or live account success is inferred; this gate is separate from `check` and CI and must be recorded explicitly.
+
+The fixture entry `tests/browser/worker.ts` and `wrangler.browser-test.jsonc` are for dry-run/local tests only. Neither application deployment config imports the registration fixture. The browser command uses the Miniflare shipped in the locked Wrangler toolchain and adds no app dependency.
 
 `npm run types` regenerates `worker-configuration.d.ts`. `npm run check:dependencies` regenerates ignored `evidence/dependencies.json` from the lock and installed artifacts. `node scripts/check-dependencies.mts --write-notices` regenerates full bundled third-party texts using tracked immutable Workers SDK supplements in `third-party/workers-sdk/`. Their provenance and SHA256 checks make generation reproducible on a clean checkout; missing or changed required inputs fail before the notices file is overwritten.
 
@@ -43,6 +47,8 @@ The utility invokes the maintained provider's `createClient` in local workerd an
 Each client needs its own registered client ID and **observed exact redirect**. The provider supports RFC 8252 loopback port flexibility; hosted redirects are exact. Incoming redirect userinfo and fragments reject before provider matching. A required vendor UI that cannot use a preregistered public client is an explicit compatibility blocker; do not enable unrestricted registration to bypass it.
 
 Login checks GitHub's numeric ID, then shows explicit client, synthetic project ID and scopes on a CSRF-protected consent page. Reuse the displayed project ID in tools. Only `synthetic:`-prefixed values are admitted, bounded to 8 KiB UTF-8 and a conservative serialized response budget. The disposable write increments a probe revision but is **not** a production memory write, immutable history, or idempotent receipt.
+
+The consent document uses `strict-origin` so a native form sends its canonical Origin while omitting callback paths and query strings from Referer. Approval loads a script-free completion document that returns to the provider-validated client URL, with a fallback link and `no-referrer`. Form restrictions and exact Origin/CSRF checks remain enforced.
 
 Discovery metadata and the unauthenticated OAuth challenge advertise both `memory:read` and `memory:write`, so normal SDK OAuth initiation requests the writable probe's permissions without a diagnostic override. Consent shows the requested scopes explicitly. Clients can still request a read-only grant, and token refresh downscoping remains enforced on every write.
 

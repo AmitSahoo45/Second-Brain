@@ -11,6 +11,7 @@
   "scripts": {
     "test": "vitest run",
     "test:tooling": "node --experimental-strip-types --test tests/tooling/*.test.mts",
+    "test:browser:consent": "wrangler deploy --dry-run --config wrangler.browser-test.jsonc --outdir dist/browser && node --experimental-strip-types scripts/test-consent-browser.mts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check src tests scripts *.json *.jsonc *.mts .github/workflows/*.yml",
     "format": "prettier --write src tests scripts *.json *.jsonc *.mts .github/workflows/*.yml",
