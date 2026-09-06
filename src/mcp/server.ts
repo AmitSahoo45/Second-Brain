@@ -5,6 +5,7 @@ import type { AuthContext, ProbeEnv } from '../auth/types';
 import type { AppConfig } from '../config';
 import { admitProbe } from '../db/auth-store';
 import { ProbeStore } from '../db/probe-store';
+import { encodeProbeResult } from '../probe-encoding';
 
 export interface ServerDependencies {
   auth: AuthContext;
@@ -41,10 +42,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     },
     async ({ project_id }) => {
       try {
-        return {
-          structuredContent: await deps.store.read(project_id),
-          content: [{ type: 'text' as const, text: 'Synthetic probe read.' }],
-        };
+        return encodeProbeResult(await deps.store.read(project_id));
       } catch {
         return {
           isError: true,
@@ -66,16 +64,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       inputSchema: z
         .object({
           project_id: z.uuid(),
-          value: z
-            .string()
-            .startsWith('synthetic:')
-            .refine(
-              (value) =>
-                new TextEncoder().encode(value).byteLength <= 8192 &&
-                new TextEncoder().encode(JSON.stringify(value)).byteLength <=
-                  22000,
-              'Value exceeds request or serialized response budget',
-            ),
+          value: z.string().startsWith('synthetic:'),
         })
         .strict(),
       annotations: {
@@ -87,12 +76,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     },
     async ({ project_id, value }) => {
       try {
-        return {
-          structuredContent: await deps.store.write(project_id, value),
-          content: [
-            { type: 'text' as const, text: 'Synthetic probe written.' },
-          ],
-        };
+        return encodeProbeResult(await deps.store.write(project_id, value));
       } catch {
         return {
           isError: true,

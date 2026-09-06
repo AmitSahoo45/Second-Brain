@@ -1,6 +1,7 @@
 import { loadConfig } from './config';
 import { createProvider } from './auth/provider';
 import { HttpError, type ProbeEnv } from './auth/types';
+import { maximumRpcIdBytes } from './probe-encoding';
 
 async function bounded(request: Request): Promise<Request> {
   if (request.url.length > 8192) throw new HttpError(414, 'request_too_large');
@@ -36,7 +37,8 @@ async function bounded(request: Request): Promise<Request> {
       typeof message !== 'object' ||
       Array.isArray(message) ||
       (message.id !== undefined &&
-        new TextEncoder().encode(JSON.stringify(message.id)).byteLength > 256)
+        new TextEncoder().encode(JSON.stringify(message.id)).byteLength >
+          maximumRpcIdBytes)
     )
       throw new HttpError(400, 'invalid_request');
   }

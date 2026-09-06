@@ -1,4 +1,5 @@
 import type { AuthContext } from '../auth/types';
+import { assertProbeValueFits, maximumProbeRevision } from '../probe-encoding';
 
 export class ProbeStore {
   constructor(
@@ -32,11 +33,12 @@ export class ProbeStore {
 
   async write(project: string, value: string) {
     this.authorize(project, true);
+    assertProbeValueFits(value);
     const row = await this.db
       .prepare(
-        'INSERT INTO probe_values (owner_id, project_id, value) VALUES (?, ?, ?) ON CONFLICT (owner_id, project_id) DO UPDATE SET value = excluded.value, revision = probe_values.revision + 1 RETURNING revision',
+        "INSERT INTO probe_values (owner_id, project_id, value) VALUES (?, ?, ?) ON CONFLICT (owner_id, project_id) DO UPDATE SET value = excluded.value, revision = probe_values.revision + 1 WHERE typeof(probe_values.revision) = 'integer' AND probe_values.revision >= 1 AND probe_values.revision < ? RETURNING revision",
       )
-      .bind(this.auth.owner_id, project, value)
+      .bind(this.auth.owner_id, project, value, maximumProbeRevision)
       .first<{ revision: number }>();
     if (!row) throw new Error('Write failed');
     return row;

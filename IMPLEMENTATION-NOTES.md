@@ -28,6 +28,10 @@ Use the current Cloudflare Vitest plugin with its supported Vitest version, pres
 
 The OAuth provider's grant identifier is opaque, not necessarily a UUID. Preserve it separately from the application's server-created grant UUID. The application UUID is the OAuth actor ID; never parse an opaque provider ID as a UUID or trust a client-supplied actor. This follows the data model's separate provider-grant column.
 
+## Observed text-result compatibility
+
+The actual ChatGPT web client read `structuredContent` successfully, but the connected Claude web client exposed only the generic `content` status string and no value/revision. This establishes the contract's text-compatibility branch: return the same result as structured data and serialized JSON text. Count both representations, second-level escaping and the JSON-RPC envelope against the 24 KiB response limit before accepting writes. Reserve bounded request-ID and revision overhead; never silently truncate a saved value. This is an existing-probe compatibility repair, not approval to expand full memory features. Repeat the actual Claude read against the unchanged ChatGPT-written value after deployment.
+
 ## Preflight contract rulings
 
 The independent local [preflight review](evidence/reviews/security-preflight.md) records the detailed task/interface checks and findings. Generated `docs/` and `evidence/` are ignored by the current working-tree settings; preserve those exclusions. These binding decisions live at the repository root so they remain available with the source. Test evidence can be regenerated and is not a claim embedded in a release.

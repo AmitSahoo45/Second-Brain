@@ -204,6 +204,235 @@ async function grant(scope = 'memory:read memory:write') {
   };
 }
 
+interface ProbeWireResult {
+  isError?: boolean;
+  content: { type: string; text: string }[];
+  structuredContent?: { value?: string | null; revision: number };
+}
+
+async function callProbe(
+  accessToken: string,
+  name: 'probe_read' | 'probe_write',
+  args: { project_id: string; value?: string },
+  id: string | number = 1,
+) {
+  const response = await request('/mcp', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Host: '127.0.0.1:8787',
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: { name, arguments: args },
+    }),
+  });
+  const wire = await response.text();
+  const json = response.headers
+    .get('content-type')
+    ?.includes('text/event-stream')
+    ? wire
+        .split('\n')
+        .find((line) => line.startsWith('data: '))!
+        .slice(6)
+    : wire;
+  const message = JSON.parse(json) as {
+    id: string | number;
+    result?: ProbeWireResult;
+  };
+  return { response, wire, message };
+}
+
+function textOnlyResult(result: ProbeWireResult) {
+  expect(result.content).toHaveLength(1);
+  expect(result.content[0]!.type).toBe('text');
+  return JSON.parse(result.content[0]!.text) as {
+    value?: string | null;
+    revision: number;
+  };
+}
+
+// Independent expected wire shape: duplicated JSON text and structured result,
+// maximum safe revision, and all 256 permitted serialized request-ID bytes.
+function prospectiveReadBytes(value: string) {
+  const data = { value, revision: Number.MAX_SAFE_INTEGER };
+  return new TextEncoder().encode(
+    'event: message\ndata: ' +
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'x'.repeat(254),
+        result: {
+          isError: false,
+          structuredContent: data,
+          content: [{ type: 'text', text: JSON.stringify(data) }],
+        },
+      }) +
+      '\n\n',
+  ).byteLength;
+}
+
+test('text-only consumers read the existing small synthetic value and structured consumers agree', async () => {
+  const tokens = await grant();
+  const project = (await env.DB.prepare(
+    'SELECT project_id FROM projects LIMIT 1',
+  ).first<{ project_id: string }>())!.project_id;
+  await env.DB.prepare('DELETE FROM probe_values WHERE project_id = ?')
+    .bind(project)
+    .run();
+  const empty = await callProbe(tokens.access_token, 'probe_read', {
+    project_id: project,
+  });
+  expect(textOnlyResult(empty.message.result!)).toEqual({
+    value: null,
+    revision: 0,
+  });
+  const value = 'synthetic:shared-proof-chatgpt-20260906-a';
+  const written = await callProbe(tokens.access_token, 'probe_write', {
+    project_id: project,
+    value,
+  });
+  const receipt = textOnlyResult(written.message.result!);
+  expect(written.message.result?.isError).toBe(false);
+  expect(receipt).toEqual(written.message.result!.structuredContent);
+  const read = await callProbe(tokens.access_token, 'probe_read', {
+    project_id: project,
+  });
+  const fromText = textOnlyResult(read.message.result!);
+  expect(fromText).toEqual({ value, revision: receipt.revision });
+  expect(fromText).toEqual(read.message.result!.structuredContent);
+  const unknown = await callProbe(tokens.access_token, 'probe_read', {
+    project_id: crypto.randomUUID(),
+  });
+  expect(unknown.message.result).toEqual({
+    isError: true,
+    content: [{ type: 'text', text: 'Probe request denied or unavailable.' }],
+  });
+  await env.DB.prepare('UPDATE grants SET revoked_at = ?')
+    .bind(new Date().toISOString())
+    .run();
+  const revoked = await callProbe(tokens.access_token, 'probe_read', {
+    project_id: project,
+  });
+  expect(revoked.response.status).toBe(401);
+  expect(revoked.wire).not.toContain(value);
+});
+
+test.each([
+  'synthetic:quotes " and backslash \\ and control \u0000\b\f\n\r\t',
+  'synthetic:বাংলা 😀 \u2028\u2029',
+  'synthetic:' + 'a'.repeat(8182),
+  'synthetic:' + '😀'.repeat(2045) + 'ab',
+])(
+  'probe JSON text round trips an allowed escaping/UTF-8 fixture %#',
+  async (value) => {
+    const tokens = await grant();
+    const project = (await env.DB.prepare(
+      'SELECT project_id FROM projects LIMIT 1',
+    ).first<{ project_id: string }>())!.project_id;
+    const written = await callProbe(tokens.access_token, 'probe_write', {
+      project_id: project,
+      value,
+    });
+    expect(written.message.result?.isError).toBe(false);
+    const read = await callProbe(
+      tokens.access_token,
+      'probe_read',
+      { project_id: project },
+      '\\'.repeat(127),
+    );
+    expect(textOnlyResult(read.message.result!)).toEqual({
+      value,
+      revision: written.message.result!.structuredContent!.revision,
+    });
+    expect(textOnlyResult(read.message.result!)).toEqual(
+      read.message.result!.structuredContent,
+    );
+    expect(new TextEncoder().encode(read.wire).byteLength).toBeLessThanOrEqual(
+      24576,
+    );
+  },
+);
+
+test('full duplicated wire limit and safe revision ceiling reject before mutation', async () => {
+  const tokens = await grant();
+  const project = (await env.DB.prepare(
+    'SELECT project_id FROM projects LIMIT 1',
+  ).first<{ project_id: string }>())!.project_id;
+  const remaining = 24576 - prospectiveReadBytes('synthetic:');
+  let controls = Math.floor(remaining / 13);
+  if ((remaining - controls * 13) % 2) controls--;
+  const ascii = (remaining - controls * 13) / 2;
+  const atLimit = 'synthetic:' + '\u0000'.repeat(controls) + 'a'.repeat(ascii);
+  const oneByteOver =
+    'synthetic:' + '\u0000'.repeat(controls - 1) + 'a'.repeat(ascii + 7);
+  expect(prospectiveReadBytes(atLimit)).toBe(24576);
+  expect(prospectiveReadBytes(oneByteOver)).toBe(24577);
+  const snapshot = () =>
+    env.DB.prepare(
+      'SELECT value, revision FROM probe_values WHERE project_id = ?',
+    )
+      .bind(project)
+      .first<{ value: string; revision: number }>();
+  try {
+    await callProbe(tokens.access_token, 'probe_write', {
+      project_id: project,
+      value: 'synthetic:unchanged',
+    });
+    const before = await snapshot();
+    for (const value of [oneByteOver, 'synthetic:' + 'a'.repeat(8183)]) {
+      const denied = await callProbe(tokens.access_token, 'probe_write', {
+        project_id: project,
+        value,
+      });
+      expect(denied.message.result).toEqual({
+        isError: true,
+        content: [
+          { type: 'text', text: 'Probe request denied or unavailable.' },
+        ],
+      });
+      expect(await snapshot()).toEqual(before);
+    }
+    await env.DB.prepare(
+      'UPDATE probe_values SET revision = ? WHERE project_id = ?',
+    )
+      .bind(Number.MAX_SAFE_INTEGER - 1, project)
+      .run();
+    const written = await callProbe(tokens.access_token, 'probe_write', {
+      project_id: project,
+      value: atLimit,
+    });
+    expect(textOnlyResult(written.message.result!)).toEqual({
+      revision: Number.MAX_SAFE_INTEGER,
+    });
+    const read = await callProbe(
+      tokens.access_token,
+      'probe_read',
+      { project_id: project },
+      'x'.repeat(254),
+    );
+    expect(new TextEncoder().encode(read.wire).byteLength).toBe(24576);
+    expect(textOnlyResult(read.message.result!)).toEqual({
+      value: atLimit,
+      revision: Number.MAX_SAFE_INTEGER,
+    });
+    const maxSnapshot = await snapshot();
+    const exhausted = await callProbe(tokens.access_token, 'probe_write', {
+      project_id: project,
+      value: 'synthetic:ceiling-denied',
+    });
+    expect(exhausted.message.result?.isError).toBe(true);
+    expect(await snapshot()).toEqual(maxSnapshot);
+  } finally {
+    await env.DB.prepare('DELETE FROM probe_values WHERE project_id = ?')
+      .bind(project)
+      .run();
+  }
+});
+
 test('production serves no probe or functioning-memory health claim', async () => {
   const response = await production.fetch(
     new Request('https://example.com/mcp'),
