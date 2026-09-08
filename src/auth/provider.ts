@@ -5,6 +5,7 @@ import {
 import type { AppConfig } from '../config';
 import { handleStatelessMcp, resolveRequestDependencies } from '../mcp/server';
 import { ownerLogin } from './owner-login';
+import { exchangeTokenContext, verifiedTokenContext } from './token-context';
 import { HttpError, type ProbeEnv } from './types';
 
 export function providerOptions(
@@ -13,8 +14,14 @@ export function providerOptions(
   return {
     apiRoute: '/mcp',
     apiHandler: {
-      async fetch(request, env) {
-        const deps = await resolveRequestDependencies(request, env, config);
+      async fetch(request, env, ctx) {
+        const summary = await verifiedTokenContext(
+          ctx.props,
+          request,
+          env,
+          config,
+        );
+        const deps = await resolveRequestDependencies(summary, env, config);
         return handleStatelessMcp(request, deps);
       },
     },
@@ -46,6 +53,7 @@ export function providerOptions(
     },
     accessTokenTTL: 900,
     refreshTokenTTL: 86400,
+    tokenExchangeCallback: (options) => exchangeTokenContext(options, config),
     onError: ({ status, headers }) =>
       Response.json(
         { error: status === 401 ? 'invalid_token' : 'invalid_request' },

@@ -1,6 +1,7 @@
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 import type { AppConfig } from '../config';
 import { HttpError, type AuthContext, type ProbeEnv } from '../auth/types';
+import type { VerifiedTokenSummary } from '../auth/token-context';
 
 export async function provisionOwner(db: D1Database, subject: string) {
   const now = new Date().toISOString();
@@ -71,29 +72,20 @@ export async function createGrant(
 }
 
 export async function admitProbe(
-  request: Request,
+  summary: VerifiedTokenSummary,
   env: ProbeEnv,
   config: AppConfig,
 ): Promise<AuthContext> {
-  const token = request.headers
-    .get('authorization')
-    ?.match(/^Bearer ([^\s]+)$/i)?.[1];
-  if (!token || !env.OAUTH_PROVIDER) throw new HttpError(401, 'invalid_token');
-  const summary = await env.OAUTH_PROVIDER.unwrapToken<{ actorId?: string }>(
-    token,
-  );
   if (
-    !summary ||
     summary.audience !== config.resource ||
-    !summary.scope.includes('memory:read') ||
-    !summary.grant.props?.actorId
+    !summary.scope.includes('memory:read')
   )
     throw new HttpError(401, 'invalid_token');
-  const id = summary.grant.props.actorId;
+  const id = summary.actorId;
   await env.DB.prepare(
     'UPDATE grants SET provider_grant_id = ? WHERE grant_id = ? AND owner_id = ? AND client_id = ? AND provider_grant_id IS NULL AND revoked_at IS NULL',
   )
-    .bind(summary.grantId, id, summary.userId, summary.grant.clientId)
+    .bind(summary.grantId, id, summary.userId, summary.clientId)
     .run();
   const row = await env.DB.prepare(
     'SELECT g.owner_id, g.grant_id, g.client_label, g.scopes_json FROM grants g JOIN owners o ON o.owner_id = g.owner_id WHERE g.grant_id = ? AND g.provider_grant_id = ? AND g.client_id = ? AND g.owner_id = ? AND g.revoked_at IS NULL AND o.active = 1 AND o.provider_subject = ? AND o.auth_epoch = g.issued_epoch',
@@ -101,7 +93,7 @@ export async function admitProbe(
     .bind(
       id,
       summary.grantId,
-      summary.grant.clientId,
+      summary.clientId,
       summary.userId,
       config.ownerSubject,
     )

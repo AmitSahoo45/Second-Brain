@@ -45,6 +45,14 @@ The independent local [preflight review](evidence/reviews/security-preflight.md)
 
 ## Evidence and release boundaries
 
+### T01 single-unwrap candidate, 8 September 2026
+
+The pinned OAuth provider 0.10.3 supports an encrypted, versioned access-token context through `tokenExchangeCallback` for both authorization-code and refresh exchanges. The context copies the original server-created actor ID, provider-derived user/client/grant IDs, effective `requestedScope`, and the configured exact resource. It changes only `accessTokenProps`; canonical grant props, scope ceilings, token TTLs and refresh policy remain unchanged. The protected handler validates the context after the provider's exact audience and expiry checks, then reuses the existing primary-D1 admission and scope intersection. The conditional provider-grant binding UPDATE and all other SQL remain unchanged in this candidate.
+
+Only exact legacy `{ actorId }` props retain the prior second unwrap for already-issued tokens; malformed or unknown versioned contexts deny. The current access-token TTL is 900 seconds, and refresh produces the new context. Controlled staging comparisons must select freshly issued candidate tokens and retain the compatibility fallback until the token window and reconnect/revocation checks justify its removal. There is no request-crossing authorization cache.
+
+Local token-record read counts establish elimination of one complete unwrap chain for newly issued tokens, not measured Cloudflare CPU savings. The callback adds mint-time decryption/encryption work: authorization-code exchange re-encrypts the grant props and separately encrypts access-token props; refresh separately encrypts access-token props without changing canonical grant props. Measure mint/refresh CPU as well as authenticated requests before accepting the candidate. T01 remains open, with independent review and the live client/CPU gates required before full features.
+
 Local tests, mocked external identity responses, protocol clients and dry-run bundles do not establish actual vendor-client compatibility, deployed D1 behavior or Cloudflare CPU headroom. Keep each of these statuses separate. T01 remains incomplete while its live gate is unverified; do not start full memory features by treating missing access as a passing result.
 
 No account identifiers, OAuth credentials or endpoints are fabricated for deployment. Configuration examples use unmistakable placeholders. Cloud provisioning, deployment and spending require the authorization available in this session. Routine local work, dependencies, testing, task commits and independent review proceed autonomously.

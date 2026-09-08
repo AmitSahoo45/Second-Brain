@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { createMcpHandler } from 'agents/mcp/server';
 import { z } from 'zod';
 import type { AuthContext, ProbeEnv } from '../auth/types';
+import type { VerifiedTokenSummary } from '../auth/token-context';
 import type { AppConfig } from '../config';
 import { admitProbe } from '../db/auth-store';
 import { ProbeStore } from '../db/probe-store';
@@ -13,11 +14,11 @@ export interface ServerDependencies {
   config: AppConfig;
 }
 export async function resolveRequestDependencies(
-  request: Request,
+  summary: VerifiedTokenSummary,
   env: ProbeEnv,
   config: AppConfig,
 ): Promise<ServerDependencies> {
-  const auth = await admitProbe(request, env, config);
+  const auth = await admitProbe(summary, env, config);
   return { auth, store: new ProbeStore(env.DB, auth), config };
 }
 
