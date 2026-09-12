@@ -5,11 +5,16 @@ import sessionSql from '../../src/db/migrations/0003_owner_sessions.sql?raw';
 import memorySql from '../../src/db/migrations/0004_memory.sql?raw';
 import opsSql from '../../src/db/migrations/0005_ops.sql?raw';
 import {
+  executeMutation,
+  type FailStage,
+  type WriteFault,
+} from '../../src/db/write-batch';
+import {
   archiveProject,
   memoryCounts,
   revokeGrantRow,
-  seedMemory,
 } from '../../src/db/repository';
+import { createMemoryService } from '../../src/domain/memory-service';
 import type {
   AuthContext,
   MemoryService,
@@ -37,27 +42,6 @@ export interface Harness {
   revokeActor(): Promise<void>;
   dispose(): Promise<void>;
 }
-
-const unimplemented: MemoryService = {
-  save() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-  update() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-  read() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-  search() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-  context() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-  history() {
-    return Promise.reject(new Error('MemoryService is not implemented'));
-  },
-};
 
 async function execSql(db: D1Database, sql: string): Promise<void> {
   for (const statement of sql
@@ -142,8 +126,40 @@ export async function createHarness(): Promise<Harness> {
   await ensureMigrated(db);
   const owner = await insertOwner(db, 'Synthetic T03 primary');
   const other = await insertOwner(db, 'Synthetic T03 other');
+  const pending: { stage?: FailStage } = {};
+  const fault: WriteFault = {
+    before(stage, attemptId, database) {
+      if (pending.stage !== stage) return;
+      delete pending.stage;
+      return database
+        .prepare(
+          'INSERT INTO write_assertions (attempt_id, applied) VALUES (?, 0)',
+        )
+        .bind(`${stage}:${attemptId}`);
+    },
+  };
+  const base = createMemoryService(db);
+  const service: MemoryService = {
+    ...base,
+    save(ctx, input) {
+      return executeMutation(
+        db,
+        ctx,
+        { operation: 'save', value: input },
+        fault,
+      );
+    },
+    update(ctx, input) {
+      return executeMutation(
+        db,
+        ctx,
+        { operation: 'update', value: input },
+        fault,
+      );
+    },
+  };
   return {
-    service: unimplemented,
+    service,
     ctx: owner.ctx,
     otherCtx: other.ctx,
     projectId: owner.projectId,
@@ -151,18 +167,21 @@ export async function createHarness(): Promise<Harness> {
     note(overrides?: Partial<NoteFields>) {
       return validSyntheticNote(overrides);
     },
-    seed(note?: Partial<NoteFields>) {
-      return seedMemory({
-        db,
-        auth: owner.ctx,
-        projectId: owner.projectId,
+    async seed(note?: Partial<NoteFields>): Promise<WriteReceipt> {
+      const result = await service.save(owner.ctx, {
+        project_id: owner.projectId,
         note: validSyntheticNote(note),
+        operation_id: crypto.randomUUID(),
       });
+      if (!result.ok) throw new Error(result.error.code);
+      return result.data;
     },
     counts(memoryId: string) {
       return memoryCounts(db, owner.ctx.owner_id, memoryId);
     },
-    failNext(_stage: 'revision' | 'fts' | 'audit' | 'receipt') {},
+    failNext(stage: FailStage) {
+      pending.stage = stage;
+    },
     archiveProject() {
       return archiveProject(db, owner.ctx.owner_id, owner.projectId);
     },

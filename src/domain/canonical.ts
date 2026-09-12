@@ -1,15 +1,26 @@
 const encoder = new TextEncoder();
+const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
 
 export const maximumRequestBytes = 32768;
 export const maximumJsonNesting = 12;
+
+function dict(): Record<string, unknown> {
+  return Object.create(null) as Record<string, unknown>;
+}
+
+function assertSafeKey(key: string): void {
+  if (blockedKeys.has(key)) throw new Error('invalid JSON key');
+}
 
 export function sorted(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sorted);
   if (value && typeof value === 'object') {
     const input = value as Record<string, unknown>;
-    const output: Record<string, unknown> = {};
-    for (const key of Object.keys(input).sort())
+    const output = dict();
+    for (const key of Object.keys(input).sort()) {
+      assertSafeKey(key);
       output[key] = sorted(input[key]);
+    }
     return output;
   }
   return value;
@@ -85,7 +96,7 @@ class JsonParser {
 
   private parseObject(depth: number): Record<string, unknown> {
     this.index += 1;
-    const result: Record<string, unknown> = {};
+    const result = dict();
     const keys = new Set<string>();
     this.skipWs();
     if (this.text[this.index] === '}') {
@@ -96,6 +107,7 @@ class JsonParser {
       this.skipWs();
       if (this.text[this.index] !== '"') throw new Error('invalid JSON');
       const key = this.parseString();
+      assertSafeKey(key);
       if (keys.has(key)) throw new Error('duplicate JSON key');
       keys.add(key);
       this.skipWs();

@@ -68,6 +68,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function assertPlain(value: Record<string, unknown>): void {
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null)
+    throw new Error('invalid note');
+}
+
+function own(value: Record<string, unknown>, key: string): unknown {
+  return Object.hasOwn(value, key) ? value[key] : undefined;
+}
+
 function codePoints(value: string): number {
   return [...value].length;
 }
@@ -113,6 +123,7 @@ function uniqueSorted(values: unknown, label: string): string[] {
 
 function evidenceRef(value: unknown): EvidenceRef {
   if (!isRecord(value)) throw new Error('invalid evidence');
+  assertPlain(value);
   for (const key of Object.keys(value)) {
     if (
       key !== 'kind' &&
@@ -122,43 +133,44 @@ function evidenceRef(value: unknown): EvidenceRef {
     )
       throw new Error('unknown field');
   }
-  const kind = value.kind;
+  const kind = own(value, 'kind');
   if (typeof kind !== 'string' || !evidenceKinds.has(kind as EvidenceKind))
     throw new Error('unsupported evidence kind');
   const result: EvidenceRef = { kind: kind as EvidenceKind };
-  if ('locator' in value) {
+  if (Object.hasOwn(value, 'locator')) {
     const locator = nfc(
-      lineEnds(requiredString(value.locator, 'locator')).trim(),
+      lineEnds(requiredString(own(value, 'locator'), 'locator')).trim(),
     );
     if (!locator) throw new Error('empty evidence');
     if (codePoints(locator) > maximumLocatorCodePoints)
       throw new Error('locator exceeds 2048 code points');
     result.locator = locator;
   }
-  if ('excerpt' in value) {
+  if (Object.hasOwn(value, 'excerpt')) {
     const excerpt = nfc(
-      lineEnds(requiredString(value.excerpt, 'excerpt')).trim(),
+      lineEnds(requiredString(own(value, 'excerpt'), 'excerpt')).trim(),
     );
     if (!excerpt) throw new Error('empty evidence');
     if (codePoints(excerpt) > maximumExcerptCodePoints)
       throw new Error('excerpt exceeds 500 code points');
     result.excerpt = excerpt;
   }
-  if ('event_at' in value)
-    result.event_at = instant(value.event_at, 'event_at');
+  if (Object.hasOwn(value, 'event_at'))
+    result.event_at = instant(own(value, 'event_at'), 'event_at');
   if (!result.locator && !result.excerpt) throw new Error('empty evidence');
   return result;
 }
 
 function relatedRef(value: unknown): RelatedRef {
   if (!isRecord(value)) throw new Error('invalid related');
+  assertPlain(value);
   for (const key of Object.keys(value)) {
     if (key !== 'memory_id' && key !== 'relation')
       throw new Error('unknown field');
   }
-  const memoryId = requiredString(value.memory_id, 'memory_id');
+  const memoryId = requiredString(own(value, 'memory_id'), 'memory_id');
   if (!idPattern.test(memoryId)) throw new Error('invalid memory_id');
-  const relation = value.relation;
+  const relation = own(value, 'relation');
   if (typeof relation !== 'string' || !relations.has(relation as Relation))
     throw new Error('unsupported relation');
   return { memory_id: memoryId, relation: relation as Relation };
@@ -166,60 +178,67 @@ function relatedRef(value: unknown): RelatedRef {
 
 export function validateNote(input: unknown): NoteFields {
   if (!isRecord(input)) throw new Error('invalid note');
+  assertPlain(input);
   for (const key of Object.keys(input)) {
     if (!noteKeys.has(key)) throw new Error('unknown field');
   }
-  const title = nfc(lineEnds(requiredString(input.title, 'title')).trim());
+  const title = nfc(
+    lineEnds(requiredString(own(input, 'title'), 'title')).trim(),
+  );
   if (!title) throw new Error('title cannot be empty');
   if (codePoints(title) > maximumTitleCodePoints)
     throw new Error('title exceeds 160 code points');
-  const body = lineEnds(requiredString(input.body, 'body'));
+  const body = lineEnds(requiredString(own(input, 'body'), 'body'));
   if (encoder.encode(body).byteLength > maximumBodyBytes)
     throw new Error('body exceeds 8 KiB');
-  const kind = input.kind;
+  const kind = own(input, 'kind');
   if (typeof kind !== 'string' || !kinds.has(kind as Kind))
     throw new Error('unsupported kind');
-  const lifecycle = input.lifecycle;
+  const lifecycle = own(input, 'lifecycle');
   if (typeof lifecycle !== 'string' || !lifecycles.has(lifecycle as Lifecycle))
     throw new Error('unsupported lifecycle');
-  const provenance = input.provenance;
+  const provenance = own(input, 'provenance');
   if (
     typeof provenance !== 'string' ||
     !provenances.has(provenance as Provenance)
   )
     throw new Error('unsupported provenance');
-  if (!Array.isArray(input.evidence))
+  const evidenceInput = own(input, 'evidence');
+  if (!Array.isArray(evidenceInput))
     throw new Error('evidence must be an array');
-  if (input.evidence.length > maximumEvidence)
+  if (evidenceInput.length > maximumEvidence)
     throw new Error('evidence exceeds limit');
-  const evidence = input.evidence.map(evidenceRef);
+  const evidence = evidenceInput.map(evidenceRef);
   if (provenance === 'source_supported' && evidence.length === 0)
     throw new Error('source_supported requires evidence');
-  if (!Array.isArray(input.related))
-    throw new Error('related must be an array');
-  if (input.related.length > maximumRelated)
+  const relatedInput = own(input, 'related');
+  if (!Array.isArray(relatedInput)) throw new Error('related must be an array');
+  if (relatedInput.length > maximumRelated)
     throw new Error('related exceeds limit');
-  const related = input.related.map(relatedRef);
+  const related = relatedInput.map(relatedRef);
   const note: NoteFields = {
     title,
     body,
     kind: kind as Kind,
     lifecycle: lifecycle as Lifecycle,
     provenance: provenance as Provenance,
-    tags: uniqueSorted(input.tags, 'tags'),
-    aliases: uniqueSorted(input.aliases, 'aliases'),
+    tags: uniqueSorted(own(input, 'tags'), 'tags'),
+    aliases: uniqueSorted(own(input, 'aliases'), 'aliases'),
     evidence,
     related,
   };
-  if ('fact_key' in input) {
-    const factKey = requiredString(input.fact_key, 'fact_key').toLowerCase();
+  if (Object.hasOwn(input, 'fact_key')) {
+    const factKey = requiredString(
+      own(input, 'fact_key'),
+      'fact_key',
+    ).toLowerCase();
     if (!factKeyPattern.test(factKey)) throw new Error('invalid fact_key');
     note.fact_key = factKey;
   }
-  if ('valid_from' in input)
-    note.valid_from = instant(input.valid_from, 'valid_from');
-  if ('valid_until' in input)
-    note.valid_until = instant(input.valid_until, 'valid_until');
+  if (Object.hasOwn(input, 'valid_from'))
+    note.valid_from = instant(own(input, 'valid_from'), 'valid_from');
+  if (Object.hasOwn(input, 'valid_until'))
+    note.valid_until = instant(own(input, 'valid_until'), 'valid_until');
   if (
     note.valid_from &&
     note.valid_until &&

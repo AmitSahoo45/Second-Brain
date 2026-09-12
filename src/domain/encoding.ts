@@ -30,10 +30,17 @@ export function encodeMemoryRead(data: {
 }) {
   if (!Number.isSafeInteger(data.record.revision) || data.record.revision < 1)
     throw new Error('Invalid memory revision');
+  const structuredContent = {
+    ok: true as const,
+    data,
+    request_id: reservedIdValue,
+  };
   const result = {
     isError: false,
-    structuredContent: data,
-    content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+    structuredContent,
+    content: [
+      { type: 'text' as const, text: JSON.stringify(structuredContent) },
+    ],
   };
   const wire =
     'event: message\ndata: ' +

@@ -112,6 +112,23 @@ test('duplicate JSON keys reject at the bounded input layer', () => {
   expect(() => parseBoundedJson('{"title":"a","title":"b"}')).toThrow();
 });
 
+test('prototype keys cannot pollute parsed or validated notes', () => {
+  expect(() => parseBoundedJson('{"__proto__":{"title":"x"}}')).toThrow();
+  expect(() =>
+    validateNote(
+      Object.assign(Object.create({ title: 'x', body: 'y' }), {
+        kind: 'fact',
+        lifecycle: 'active',
+        provenance: 'unverified',
+        tags: [],
+        aliases: [],
+        evidence: [],
+        related: [],
+      }),
+    ),
+  ).toThrow();
+});
+
 test('CRLF body order is preserved and tags sort after dedupe', () => {
   const note = validateNote(
     validSyntheticNote({
