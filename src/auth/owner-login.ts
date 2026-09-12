@@ -241,7 +241,7 @@ export async function ownerLogin(
       metadata: { actorId },
       props: { actorId },
     });
-    let ownerSession: Awaited<ReturnType<typeof createOwnerSession>> = null;
+    let ownerSession: Awaited<ReturnType<typeof createOwnerSession>>;
     try {
       const owner = await env.DB.prepare(
         'SELECT auth_epoch FROM owners WHERE owner_id = ? AND active = 1',
