@@ -21,7 +21,7 @@ import type {
   NoteFields,
   WriteReceipt,
 } from '../../src/domain/types';
-import { validSyntheticNote } from './fixtures';
+import { syntheticHmacSecret, validSyntheticNote } from './fixtures';
 
 export interface Harness {
   service: MemoryService;
@@ -138,7 +138,7 @@ export async function createHarness(): Promise<Harness> {
         .bind(`${stage}:${attemptId}`);
     },
   };
-  const base = createMemoryService(db);
+  const base = createMemoryService(db, syntheticHmacSecret);
   const service: MemoryService = {
     ...base,
     save(ctx, input) {

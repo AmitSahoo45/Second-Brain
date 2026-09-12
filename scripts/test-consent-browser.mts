@@ -120,6 +120,7 @@ try {
             GITHUB_OWNER_ID: '123456789',
             GITHUB_CLIENT_ID: 'synthetic-client',
             GITHUB_CLIENT_SECRET: 'synthetic-secret',
+            HMAC_SECRET: 'synthetic-hmac-secret-for-local-tests!',
           },
           d1Databases: { DB: 'synthetic-browser-db' },
           kvNamespaces: ['OAUTH_KV'],

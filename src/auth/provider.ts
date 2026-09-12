@@ -41,6 +41,9 @@ export function providerOptions(
     allowImplicitFlow: false,
     allowPlainPKCE: false,
     allowTokenExchangeGrant: false,
+    ...(registrationPolicy.dynamicClientRegistration
+      ? { clientRegistrationEndpoint: '/oauth/register' as const }
+      : {}),
     clientIdMetadataDocumentEnabled:
       registrationPolicy.clientIdMetadataDocument,
     resourceMatchOriginOnly: false,

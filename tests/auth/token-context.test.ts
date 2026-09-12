@@ -25,6 +25,7 @@ const fixtureEnv = {
   GITHUB_OWNER_ID: '123456789',
   GITHUB_CLIENT_ID: 'synthetic-client',
   GITHUB_CLIENT_SECRET: 'synthetic-secret',
+  HMAC_SECRET: 'synthetic-hmac-secret-for-local-tests!',
 };
 const config = loadConfig(fixtureEnv);
 const redirectUri = 'https://client.example/callback';

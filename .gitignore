@@ -18,3 +18,6 @@ backups/
 local-data/
 .DS_Store
 Thumbs.db
+docs/
+evidence/
+shared-memory-blueprint/

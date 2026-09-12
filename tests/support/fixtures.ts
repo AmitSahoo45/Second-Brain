@@ -1,5 +1,7 @@
 import type { NoteFields } from '../../src/domain/types';
 
+export const syntheticHmacSecret = 'synthetic-hmac-secret-for-local-tests!';
+
 export function validSyntheticNote(
   overrides: Partial<NoteFields> = {},
 ): NoteFields {

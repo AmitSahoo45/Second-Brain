@@ -9,6 +9,7 @@
   "vars": {
     "APP_ENV": "local",
     "MCP_RESOURCE_URL": "http://127.0.0.1:8787/mcp",
+    "HMAC_SECRET": "local-only-hmac-secret-do-not-use-elsewhere",
   },
   "d1_databases": [
     {

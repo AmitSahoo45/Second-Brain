@@ -16,6 +16,7 @@ const configured = {
   GITHUB_OWNER_ID: '123456789',
   GITHUB_CLIENT_ID: 'synthetic-client',
   GITHUB_CLIENT_SECRET: 'synthetic-upstream-secret',
+  HMAC_SECRET: 'synthetic-hmac-secret-for-local-tests!',
   DB: { prepare() {} },
   OAUTH_KV: { get() {}, put() {} },
 };
@@ -30,6 +31,7 @@ test.each([
   'GITHUB_OWNER_ID',
   'GITHUB_CLIENT_ID',
   'GITHUB_CLIENT_SECRET',
+  'HMAC_SECRET',
   'APP_ENV',
   'MCP_RESOURCE_URL',
 ])('rejects missing %s', (key) => {
@@ -52,6 +54,12 @@ test.each([
       APP_ENV: 'staging',
       MCP_RESOURCE_URL: resource,
     }),
+  ).toThrow();
+});
+
+test('rejects a short HMAC secret', () => {
+  expect(() =>
+    loadConfig({ ...configured, HMAC_SECRET: 'too-short-to-be-a-secret' }),
   ).toThrow();
 });
 

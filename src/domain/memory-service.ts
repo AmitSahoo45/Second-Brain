@@ -1,3 +1,4 @@
+import { historyMemory, readMemory, searchMemory } from '../db/search';
 import { executeMutation } from '../db/write-batch';
 import type {
   AuthContext,
@@ -23,7 +24,10 @@ function unavailable<T>(): Promise<Outcome<T>> {
   });
 }
 
-export function createMemoryService(db: D1Database): MemoryService {
+export function createMemoryService(
+  db: D1Database,
+  hmacSecret: string,
+): MemoryService {
   return {
     save(ctx: AuthContext, input: SaveInput) {
       return executeMutation(db, ctx, { operation: 'save', value: input });
@@ -31,17 +35,17 @@ export function createMemoryService(db: D1Database): MemoryService {
     update(ctx: AuthContext, input: UpdateInput) {
       return executeMutation(db, ctx, { operation: 'update', value: input });
     },
-    read(_ctx: AuthContext, _input: ReadInput) {
-      return unavailable();
+    read(ctx: AuthContext, input: ReadInput) {
+      return readMemory(db, ctx, input);
     },
-    search(_ctx: AuthContext, _input: SearchInput) {
-      return unavailable();
+    search(ctx: AuthContext, input: SearchInput) {
+      return searchMemory(db, ctx, input, hmacSecret);
     },
     context(_ctx: AuthContext, _input: ContextInput) {
       return unavailable();
     },
-    history(_ctx: AuthContext, _input: HistoryInput) {
-      return unavailable();
+    history(ctx: AuthContext, input: HistoryInput) {
+      return historyMemory(db, ctx, input);
     },
   };
 }

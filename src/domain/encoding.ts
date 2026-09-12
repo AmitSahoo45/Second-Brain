@@ -24,12 +24,7 @@ export function prospectiveRecord(note: NoteFields): MemoryRecord {
   };
 }
 
-export function encodeMemoryRead(data: {
-  record: MemoryRecord;
-  historical: boolean;
-}) {
-  if (!Number.isSafeInteger(data.record.revision) || data.record.revision < 1)
-    throw new Error('Invalid memory revision');
+export function encodeToolOutcome(data: unknown) {
   const structuredContent = {
     ok: true as const,
     data,
@@ -51,6 +46,15 @@ export function encodeMemoryRead(data: {
       'RESPONSE_TOO_LARGE: complete read cannot fit the 24 KiB envelope',
     );
   return result;
+}
+
+export function encodeMemoryRead(data: {
+  record: MemoryRecord;
+  historical: boolean;
+}) {
+  if (!Number.isSafeInteger(data.record.revision) || data.record.revision < 1)
+    throw new Error('Invalid memory revision');
+  return encodeToolOutcome(data);
 }
 
 export function assertNoteFitsRead(note: NoteFields): void {

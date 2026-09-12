@@ -6,6 +6,7 @@ export interface ProbeEnv {
   GITHUB_OWNER_ID: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  HMAC_SECRET: string;
   DB: D1Database;
   OAUTH_KV: KVNamespace;
   OAUTH_PROVIDER?: OAuthHelpers;

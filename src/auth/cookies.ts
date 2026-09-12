@@ -1,14 +1,22 @@
 import type { AppConfig } from '../config';
 
+const encoder = new TextEncoder();
+const maximumCookieHeaderBytes = 4096;
+const maximumCookieValueBytes = 128;
+
 export function cookieValue(request: Request, name: string) {
-  return (
-    request.headers
-      .get('cookie')
-      ?.split(';')
-      .map((item) => item.trim())
-      .find((item) => item.startsWith(name + '='))
-      ?.slice(name.length + 1) ?? ''
-  );
+  const header = request.headers.get('cookie');
+  if (!header || encoder.encode(header).byteLength > maximumCookieHeaderBytes)
+    return '';
+  for (const item of header.split(';')) {
+    const trimmed = item.trim();
+    const separator = trimmed.indexOf('=');
+    if (separator <= 0 || trimmed.slice(0, separator) !== name) continue;
+    const value = trimmed.slice(separator + 1);
+    if (encoder.encode(value).byteLength > maximumCookieValueBytes) return '';
+    return value;
+  }
+  return '';
 }
 
 export function sessionCookie(

@@ -104,7 +104,7 @@ export async function admitAdmin(
     actor_client_label: 'Owner admin',
     grant_id: null,
     project_ids: projects.results.map((item) => item.project_id),
-    scopes: [],
+    scopes: ['memory:read', 'memory:write'],
   };
 }
 

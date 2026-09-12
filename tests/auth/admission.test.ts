@@ -25,6 +25,7 @@ const fixtureEnv = {
   GITHUB_OWNER_ID: '123456789',
   GITHUB_CLIENT_ID: 'synthetic-client',
   GITHUB_CLIENT_SECRET: 'synthetic-secret',
+  HMAC_SECRET: 'synthetic-hmac-secret-for-local-tests!',
 };
 const config = loadConfig(fixtureEnv);
 const redirectUri = 'https://client.example/callback';
@@ -124,6 +125,7 @@ async function makeAuthFixture() {
       headers: { cookie: `owner_session=${session!.raw}` },
     });
   const admin = await admitAdmin(adminRequest(), boundEnv, false);
+  expect(admin.scopes).toEqual(['memory:read', 'memory:write']);
   return {
     admin,
     grantId,
@@ -160,7 +162,9 @@ test('registration policy keeps DCR and CIMD disabled', () => {
     dynamicClientRegistration: false,
     clientIdMetadataDocument: false,
   });
-  expect(providerOptions(config).clientIdMetadataDocumentEnabled).toBe(false);
+  const options = providerOptions(config);
+  expect(options.clientIdMetadataDocumentEnabled).toBe(false);
+  expect(options.clientRegistrationEndpoint).toBeUndefined();
 });
 
 test('a committed revoke denies a newly admitted request', async () => {

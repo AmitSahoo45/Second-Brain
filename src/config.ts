@@ -5,6 +5,7 @@ export interface AppConfig {
   ownerSubject: string;
   githubClientId: string;
   githubClientSecret: string;
+  hmacSecret: string;
 }
 
 function required(env: Record<string, unknown>, key: string): string {
@@ -53,5 +54,12 @@ export function loadConfig(env: Record<string, unknown>): AppConfig {
     ownerSubject,
     githubClientId: required(env, 'GITHUB_CLIENT_ID'),
     githubClientSecret: required(env, 'GITHUB_CLIENT_SECRET'),
+    hmacSecret: requiredHmac(env),
   };
+}
+
+function requiredHmac(env: Record<string, unknown>): string {
+  const value = required(env, 'HMAC_SECRET');
+  if (value.length < 32) throw new Error('Invalid HMAC_SECRET');
+  return value;
 }
