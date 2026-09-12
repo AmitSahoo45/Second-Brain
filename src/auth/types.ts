@@ -11,16 +11,26 @@ export interface ProbeEnv {
   OAUTH_PROVIDER?: OAuthHelpers;
 }
 
-export interface AuthContext {
+interface AuthBase {
   owner_id: string;
   actor_id: string;
-  actor_kind: 'oauth_grant';
   actor_client_label: string;
-  grant_id: string;
-  provider_grant_id: string;
   project_ids: readonly string[];
   scopes: readonly string[];
 }
+
+export interface OAuthGrantContext extends AuthBase {
+  actor_kind: 'oauth_grant';
+  grant_id: string;
+  provider_grant_id: string;
+}
+
+export interface OwnerAdminContext extends AuthBase {
+  actor_kind: 'owner_admin';
+  grant_id: null;
+}
+
+export type AuthContext = OAuthGrantContext | OwnerAdminContext;
 
 export class HttpError extends Error {
   constructor(

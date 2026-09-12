@@ -11,6 +11,7 @@ import { providerOptions } from '../../src/auth/provider';
 import { loadConfig } from '../../src/config';
 import migration from '../../src/db/migrations/0001_auth.sql?raw';
 import boundsMigration from '../../src/db/migrations/0002_probe_auth_bounds.sql?raw';
+import sessionMigration from '../../src/db/migrations/0003_owner_sessions.sql?raw';
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -46,7 +47,7 @@ async function request(path: string, init?: RequestInit) {
 }
 
 beforeAll(async () => {
-  for (const statement of (migration + boundsMigration)
+  for (const statement of (migration + boundsMigration + sessionMigration)
     .split(';')
     .map((value) => value.trim())
     .filter(Boolean))

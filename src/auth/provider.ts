@@ -4,7 +4,9 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import type { AppConfig } from '../config';
 import { handleStatelessMcp, resolveRequestDependencies } from '../mcp/server';
+import { handleAdminRequest } from './admin-session';
 import { ownerLogin } from './owner-login';
+import { registrationPolicy } from './registration';
 import { exchangeTokenContext, verifiedTokenContext } from './token-context';
 import { HttpError, type ProbeEnv } from './types';
 
@@ -28,7 +30,10 @@ export function providerOptions(
     defaultHandler: {
       async fetch(request, env) {
         if (!env.OAUTH_PROVIDER) throw new HttpError(503, 'unavailable');
-        return ownerLogin(request, env, config, env.OAUTH_PROVIDER);
+        return (
+          (await handleAdminRequest(request, env)) ??
+          ownerLogin(request, env, config, env.OAUTH_PROVIDER)
+        );
       },
     },
     authorizeEndpoint: '/authorize',
@@ -36,7 +41,8 @@ export function providerOptions(
     allowImplicitFlow: false,
     allowPlainPKCE: false,
     allowTokenExchangeGrant: false,
-    clientIdMetadataDocumentEnabled: false,
+    clientIdMetadataDocumentEnabled:
+      registrationPolicy.clientIdMetadataDocument,
     resourceMatchOriginOnly: false,
     scopesSupported: ['memory:read', 'memory:write'],
     resourceMetadata: {

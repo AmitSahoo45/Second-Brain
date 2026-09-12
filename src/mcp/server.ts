@@ -1,15 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { createMcpHandler } from 'agents/mcp/server';
 import { z } from 'zod';
-import type { AuthContext, ProbeEnv } from '../auth/types';
+import type { OAuthGrantContext, ProbeEnv } from '../auth/types';
 import type { VerifiedTokenSummary } from '../auth/token-context';
 import type { AppConfig } from '../config';
-import { admitProbe } from '../db/auth-store';
+import { admitGrantedToken } from '../auth/admission';
 import { ProbeStore } from '../db/probe-store';
 import { encodeProbeResult } from '../probe-encoding';
 
 export interface ServerDependencies {
-  auth: AuthContext;
+  auth: OAuthGrantContext;
   store: ProbeStore;
   config: AppConfig;
 }
@@ -18,7 +18,7 @@ export async function resolveRequestDependencies(
   env: ProbeEnv,
   config: AppConfig,
 ): Promise<ServerDependencies> {
-  const auth = await admitProbe(summary, env, config);
+  const auth = await admitGrantedToken(summary, env, config);
   return { auth, store: new ProbeStore(env.DB, auth), config };
 }
 

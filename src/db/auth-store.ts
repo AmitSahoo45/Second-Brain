@@ -1,6 +1,10 @@
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 import type { AppConfig } from '../config';
-import { HttpError, type AuthContext, type ProbeEnv } from '../auth/types';
+import {
+  HttpError,
+  type OAuthGrantContext,
+  type ProbeEnv,
+} from '../auth/types';
 import type { VerifiedTokenSummary } from '../auth/token-context';
 
 export async function provisionOwner(db: D1Database, subject: string) {
@@ -75,7 +79,7 @@ export async function admitProbe(
   summary: VerifiedTokenSummary,
   env: ProbeEnv,
   config: AppConfig,
-): Promise<AuthContext> {
+): Promise<OAuthGrantContext> {
   if (
     summary.audience !== config.resource ||
     !summary.scope.includes('memory:read')

@@ -10,34 +10,10 @@ import {
   createAuthFlow,
   createConsent,
 } from '../db/auth-flow-store';
+import { createOwnerSession } from '../db/owner-session-store';
+import { cookieValue, sessionCookie } from './cookies';
+import { hash } from './hash';
 import { HttpError, type ProbeEnv } from './types';
-
-export async function hash(value: string) {
-  return Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
-    ),
-    (byte) => byte.toString(16).padStart(2, '0'),
-  ).join('');
-}
-function cookieValue(request: Request, name: string) {
-  return (
-    request.headers
-      .get('cookie')
-      ?.split(';')
-      .map((item) => item.trim())
-      .find((item) => item.startsWith(name + '='))
-      ?.slice(name.length + 1) ?? ''
-  );
-}
-function sessionCookie(
-  name: string,
-  value: string,
-  config: AppConfig,
-  expires = false,
-) {
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${expires ? 0 : 600}${config.origin.startsWith('https:') ? '; Secure' : ''}`;
-}
 function escape(value: string) {
   return value.replace(
     /[&<>"']/g,
@@ -265,17 +241,39 @@ export async function ownerLogin(
       metadata: { actorId },
       props: { actorId },
     });
+    let ownerSession: Awaited<ReturnType<typeof createOwnerSession>> = null;
+    try {
+      const owner = await env.DB.prepare(
+        'SELECT auth_epoch FROM owners WHERE owner_id = ? AND active = 1',
+      )
+        .bind(consent.owner_id)
+        .first<{ auth_epoch: number }>();
+      ownerSession = owner
+        ? await createOwnerSession(
+            env.DB,
+            consent.owner_id,
+            owner.auth_epoch,
+            Date.now(),
+          )
+        : null;
+    } catch {
+      ownerSession = null;
+    }
     const destination = escape(completed.redirectTo);
     const html = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Authorization complete</title><meta http-equiv="refresh" content="0; URL=${destination}"><h1>Authorization complete</h1><p><a href="${destination}" rel="noreferrer">Continue to client</a></p></html>`;
-    return new Response(html, {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'referrer-policy': 'no-referrer',
-        'content-security-policy':
-          "default-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
-        'set-cookie': sessionCookie('probe_consent', '', config, true),
-      },
+    const headers = new Headers({
+      'content-type': 'text/html; charset=utf-8',
+      'referrer-policy': 'no-referrer',
+      'content-security-policy':
+        "default-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+      'set-cookie': sessionCookie('probe_consent', '', config, true),
     });
+    if (ownerSession)
+      headers.append(
+        'set-cookie',
+        sessionCookie('owner_session', ownerSession.raw, config, false, 3600),
+      );
+    return new Response(html, { headers });
   }
   return new Response('Not found', { status: 404 });
 }

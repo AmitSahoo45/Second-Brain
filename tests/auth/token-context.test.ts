@@ -391,8 +391,10 @@ test.each(['kv', 'd1'] as const)(
         fixture.access_token,
         fixture.owner.project_id,
       );
-      expect(response.status).toBe(503);
-      expect(await response.json()).toEqual({ error: 'unavailable' });
+      expect(response.status).toBe(storage === 'd1' ? 401 : 503);
+      expect(await response.json()).toEqual({
+        error: storage === 'd1' ? 'invalid_token' : 'unavailable',
+      });
     } finally {
       failure.mockRestore();
     }

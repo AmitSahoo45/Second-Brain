@@ -9,6 +9,7 @@ export class ProbeStore {
 
   private authorize(project: string, write = false) {
     if (
+      this.auth.actor_kind !== 'oauth_grant' ||
       !this.auth.project_ids.includes(project) ||
       !this.auth.scopes.includes('memory:read') ||
       (write && !this.auth.scopes.includes('memory:write'))

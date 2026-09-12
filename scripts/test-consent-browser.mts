@@ -137,7 +137,11 @@ try {
     }),
   );
   const db = await mf.getD1Database('DB');
-  for (const file of ['0001_auth.sql', '0002_probe_auth_bounds.sql'])
+  for (const file of [
+    '0001_auth.sql',
+    '0002_probe_auth_bounds.sql',
+    '0003_owner_sessions.sql',
+  ])
     for (const sql of (
       await readFile(resolve('src/db/migrations', file), 'utf8')
     )
