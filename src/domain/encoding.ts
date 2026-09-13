@@ -24,6 +24,14 @@ export function prospectiveRecord(note: NoteFields): MemoryRecord {
   };
 }
 
+export function mcpToolResultWireBytes(result: unknown): number {
+  const wire =
+    'event: message\ndata: ' +
+    JSON.stringify({ jsonrpc: '2.0', id: reservedId, result }) +
+    '\n\n';
+  return encoder.encode(wire).byteLength;
+}
+
 export function encodeToolOutcome(data: unknown) {
   const structuredContent = {
     ok: true as const,
@@ -37,11 +45,7 @@ export function encodeToolOutcome(data: unknown) {
       { type: 'text' as const, text: JSON.stringify(structuredContent) },
     ],
   };
-  const wire =
-    'event: message\ndata: ' +
-    JSON.stringify({ jsonrpc: '2.0', id: reservedId, result }) +
-    '\n\n';
-  if (encoder.encode(wire).byteLength > maximumMemoryOutputBytes)
+  if (mcpToolResultWireBytes(result) > maximumMemoryOutputBytes)
     throw new Error(
       'RESPONSE_TOO_LARGE: complete read cannot fit the 24 KiB envelope',
     );
