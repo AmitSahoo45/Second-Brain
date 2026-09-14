@@ -89,7 +89,7 @@ export async function admitAdmin(
   let projects;
   try {
     projects = await env.DB.prepare(
-      'SELECT project_id FROM projects WHERE owner_id = ? AND archived_at IS NULL',
+      'SELECT project_id FROM projects WHERE owner_id = ?',
     )
       .bind(row.owner_id)
       .all<{ project_id: string }>();
