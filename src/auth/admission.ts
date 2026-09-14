@@ -127,7 +127,7 @@ export async function revokeGrant(
     throw new HttpError(403, 'access_denied');
   }
   if (!row) throw new HttpError(403, 'access_denied');
-  if (!row.provider_grant_id) return 'revoked';
+  if (!row.provider_grant_id) return 'cleanup_pending';
   if (!env.OAUTH_PROVIDER) return 'cleanup_pending';
   try {
     await env.OAUTH_PROVIDER.revokeGrant(row.provider_grant_id, ctx.owner_id);

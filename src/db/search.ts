@@ -76,7 +76,9 @@ function stripQuotes(token: string): string {
 }
 
 function escapeFts(token: string): string {
-  return `"${token.replaceAll('"', '""')}"`;
+  const literal = token.replaceAll('*', '').replaceAll('^', '');
+  if (!literal) throw new Error('invalid query');
+  return `"${literal.replaceAll('"', '""')}"`;
 }
 
 function parseQuery(query: unknown): {
@@ -89,7 +91,11 @@ function parseQuery(query: unknown): {
   if (!normalized) throw new Error('invalid query');
   if ([...normalized].length > maximumQueryCodePoints)
     throw new Error('invalid query');
-  const tokens = normalized.split(' ').map(stripQuotes).filter(Boolean);
+  const tokens = normalized
+    .split(' ')
+    .map(stripQuotes)
+    .map((token) => token.replaceAll('*', '').replaceAll('^', ''))
+    .filter(Boolean);
   if (tokens.length === 0 || tokens.length > maximumTokens)
     throw new Error('invalid query');
   return {

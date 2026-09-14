@@ -1,4 +1,3 @@
-import { assertNoteFitsRead } from './encoding';
 import { canonicalJson } from './canonical';
 import type {
   EvidenceKind,
@@ -247,6 +246,5 @@ export function validateNote(input: unknown): NoteFields {
     throw new Error('invalid validity interval');
   if (encoder.encode(canonicalJson(note)).byteLength > maximumNoteBytes)
     throw new Error('note exceeds 12 KiB');
-  assertNoteFitsRead(note);
   return note;
 }

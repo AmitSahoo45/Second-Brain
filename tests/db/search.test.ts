@@ -214,6 +214,26 @@ test('literal punctuation, UUID, Bengali and romanized aliases match', async () 
   }
 });
 
+test('FTS prefix operators do not widen same-project recall', async () => {
+  const h = await createHarness();
+  try {
+    await h.seed({
+      title: 'prefix-only',
+      body: 'foobarqux',
+      fact_key: 'synthetic.fts.prefix',
+    });
+    const r = await h.service.search(h.ctx, {
+      project_id: h.projectId,
+      query: 'foo*',
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.items).toEqual([]);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('caller FTS operators are literal terms', async () => {
   const h = await createHarness();
   try {

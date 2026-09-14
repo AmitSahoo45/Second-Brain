@@ -236,13 +236,9 @@ export async function executeMutation(
   let note: NoteFields;
   try {
     note = validateNote(input.value.note);
-    assertNoteFitsRead(note);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'invalid note';
-    const code: ErrorCode = message.includes('RESPONSE_TOO_LARGE')
-      ? 'RESPONSE_TOO_LARGE'
-      : 'VALIDATION_ERROR';
-    return fail(requestId, code, message);
+    return fail(requestId, 'VALIDATION_ERROR', message);
   }
   if (input.operation === 'update') {
     if (!uuid.test(input.value.memory_id))
@@ -276,6 +272,12 @@ export async function executeMutation(
   const expires = new Date(now + receiptMs).toISOString();
   const existing = await lookupReceipt(db, ctx, input.value.operation_id);
   if (existing) return classifyExisting(existing, hash, now, requestId);
+  try {
+    assertNoteFitsRead(note);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'invalid note';
+    return fail(requestId, 'RESPONSE_TOO_LARGE', message);
+  }
   const project = await db
     .prepare(
       'SELECT archived_at FROM projects WHERE owner_id = ? AND project_id = ?',
@@ -463,9 +465,16 @@ export async function executeMutation(
       ),
     db
       .prepare(
-        'INSERT INTO write_assertions (attempt_id, applied) SELECT ?, EXISTS (SELECT 1 FROM mutation_receipts WHERE mutation_attempt_id = ?)',
+        'INSERT INTO write_assertions (attempt_id, applied) SELECT ?, CASE WHEN EXISTS (SELECT 1 FROM mutation_receipts WHERE mutation_attempt_id = ?) AND (SELECT COUNT(*) FROM memory_relations WHERE owner_id = ? AND project_id = ? AND source_memory_id = ?) = ? THEN 1 ELSE 0 END',
       )
-      .bind(attemptId, attemptId),
+      .bind(
+        attemptId,
+        attemptId,
+        ctx.owner_id,
+        input.value.project_id,
+        memoryId,
+        note.related.length,
+      ),
     db
       .prepare('DELETE FROM write_assertions WHERE attempt_id = ?')
       .bind(attemptId),

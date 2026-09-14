@@ -6,7 +6,7 @@ export const maximumMemoryRevision = Number.MAX_SAFE_INTEGER;
 
 const encoder = new TextEncoder();
 const reservedId = 'x'.repeat(maximumRpcIdBytes - 2);
-const reservedActorLabel = 'x'.repeat(80);
+const reservedActorLabel = '\u0800'.repeat(80);
 const reservedInstant = '9999-12-31T23:59:59.999Z';
 const reservedIdValue = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
 

@@ -251,6 +251,66 @@ test('profile opt-in requires its own grant', async () => {
   }
 });
 
+test('archived project context stays empty even with profile opt-in', async () => {
+  const h = await createHarness();
+  try {
+    const profileId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO projects (project_id, owner_id, name, normalized_name, is_profile, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
+      ).bind(
+        profileId,
+        h.ctx.owner_id,
+        'Synthetic Profile',
+        'synthetic profile',
+        now,
+        now,
+      ),
+      env.DB.prepare(
+        'INSERT INTO grant_projects (grant_id, owner_id, project_id) VALUES (?, ?, ?)',
+      ).bind(h.ctx.grant_id, h.ctx.owner_id, profileId),
+    ]);
+    const granted = {
+      ...h.ctx,
+      project_ids: [h.projectId, profileId],
+    };
+    await h.service.save(granted, {
+      project_id: h.projectId,
+      note: h.note({
+        title: 'synthetic.context.archived',
+        fact_key: 'synthetic.context.archived.project',
+      }),
+      operation_id: crypto.randomUUID(),
+    });
+    await h.service.save(granted, {
+      project_id: profileId,
+      note: h.note({
+        title: 'synthetic.context.archived',
+        fact_key: 'synthetic.context.archived.profile',
+      }),
+      operation_id: crypto.randomUUID(),
+    });
+    await env.DB.prepare(
+      'UPDATE projects SET archived_at = ? WHERE project_id = ?',
+    )
+      .bind(now, h.projectId)
+      .run();
+    const packed = await h.service.context(granted, {
+      project_id: h.projectId,
+      query: 'synthetic.context.archived',
+      include_profile: true,
+      max_bytes: 8192,
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    expect(packed.data.items).toEqual([]);
+    expect(packed.data.profile_included).toBe(false);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('invalid context budget is rejected', async () => {
   const h = await createHarness();
   try {

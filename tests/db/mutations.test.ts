@@ -261,6 +261,13 @@ test('related targets must exist in the same project', async () => {
       operation_id: crypto.randomUUID(),
     });
     expect(related.ok).toBe(true);
+    if (!related.ok) return;
+    const edges = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM memory_relations WHERE source_memory_id = ?',
+    )
+      .bind(related.data.memory_id)
+      .first<{ n: number }>();
+    expect(edges?.n).toBe(1);
     const other = await h.service.save(h.ctx, {
       project_id: h.projectId,
       note: h.note({

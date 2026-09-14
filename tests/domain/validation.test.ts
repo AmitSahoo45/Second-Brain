@@ -4,6 +4,7 @@ import {
   hashRequest,
   parseBoundedJson,
 } from '../../src/domain/canonical';
+import { assertNoteFitsRead } from '../../src/domain/encoding';
 import { validateNote } from '../../src/domain/validation';
 import { validSyntheticNote } from '../support/fixtures';
 
@@ -142,11 +143,13 @@ test('CRLF body order is preserved and tags sort after dedupe', () => {
 
 test('worst-case escaping can exceed the read envelope', () => {
   expect(() =>
-    validateNote(
-      validSyntheticNote({
-        title: '"'.repeat(160),
-        body: '"'.repeat(5000),
-      }),
+    assertNoteFitsRead(
+      validateNote(
+        validSyntheticNote({
+          title: '"'.repeat(160),
+          body: '"'.repeat(5000),
+        }),
+      ),
     ),
   ).toThrow(/RESPONSE_TOO_LARGE|complete read cannot fit/i);
 });

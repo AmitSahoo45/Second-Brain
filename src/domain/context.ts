@@ -213,6 +213,15 @@ export async function buildContext(
     false,
   );
   if (!primary.ok) return primary;
+  const selected = await db
+    .prepare(
+      'SELECT archived_at FROM projects WHERE owner_id = ? AND project_id = ?',
+    )
+    .bind(ctx.owner_id, input.project_id)
+    .first<{ archived_at: string | null }>();
+  if (selected?.archived_at) {
+    return ok(primary.request_id, packContext([], budget));
+  }
   let truncated = primary.data.truncated;
   const candidates = primary.data.candidates;
   if (input.include_profile) {

@@ -284,7 +284,7 @@ test('admin session plus CSRF Origin revoke blocks subsequent MCP admits', async
     }),
   );
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ status: 'revoked' });
+  expect(await response.json()).toEqual({ status: 'cleanup_pending' });
   await expect(admitMcp(f.request(), f.env)).rejects.toBeInstanceOf(HttpError);
 });
 
